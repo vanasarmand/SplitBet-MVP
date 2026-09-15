@@ -66,7 +66,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
             ),
             boxShadow: [
               BoxShadow(
-                color: (widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold).withOpacity(0.2),
+                color: (widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold).withValues(alpha: 0.2),
                 blurRadius: 30,
                 spreadRadius: 4,
               ),
@@ -80,7 +80,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                 width: 70,
                 height: 70,
                 decoration: BoxDecoration(
-                  color: (widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold).withOpacity(0.15),
+                  color: (widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold).withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -178,7 +178,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppTheme.border),
                   ),

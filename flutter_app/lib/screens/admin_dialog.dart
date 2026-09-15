@@ -143,9 +143,9 @@ class _AdminDashboardDialogState extends State<AdminDashboardDialog> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceLight.withOpacity(0.4),
+        color: AppTheme.surfaceLight.withValues(alpha: 0.4),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppTheme.border.withOpacity(0.5)),
+        border: Border.all(color: AppTheme.border.withValues(alpha: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

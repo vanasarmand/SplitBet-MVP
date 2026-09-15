@@ -41,18 +41,18 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: _isExpanded ? AppTheme.electricLime.withOpacity(0.5) : AppTheme.border,
+          color: _isExpanded ? AppTheme.electricLime.withValues(alpha: 0.5) : AppTheme.border,
           width: _isExpanded ? 1.5 : 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
           if (_isExpanded)
             BoxShadow(
-              color: AppTheme.electricLime.withOpacity(0.06),
+              color: AppTheme.electricLime.withValues(alpha: 0.06),
               blurRadius: 20,
               spreadRadius: 2,
             ),
@@ -124,9 +124,9 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: AppTheme.gold.withOpacity(0.15),
+                            color: AppTheme.gold.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppTheme.gold.withOpacity(0.4)),
+                            border: Border.all(color: AppTheme.gold.withValues(alpha: 0.4)),
                           ),
                           child: const Text(
                             'SETTLED',
@@ -137,9 +137,9 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: AppTheme.warning.withOpacity(0.15),
+                            color: AppTheme.warning.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppTheme.warning.withOpacity(0.4)),
+                            border: Border.all(color: AppTheme.warning.withValues(alpha: 0.4)),
                           ),
                           child: const Text(
                             'LOCKED',
@@ -173,7 +173,7 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                         width: 22,
                         height: 22,
                         decoration: BoxDecoration(
-                          color: _isExpanded ? AppTheme.electricLime : Colors.white.withOpacity(0.85),
+                          color: _isExpanded ? AppTheme.electricLime : Colors.white.withValues(alpha: 0.85),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
@@ -253,9 +253,9 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.gold.withOpacity(0.12),
+                          color: AppTheme.gold.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.gold.withOpacity(0.5)),
+                          border: Border.all(color: AppTheme.gold.withValues(alpha: 0.5)),
                         ),
                         child: Row(
                           children: [
@@ -331,9 +331,9 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF25D366).withOpacity(0.15),
+                              color: const Color(0xFF25D366).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFF25D366).withOpacity(0.5)),
+                              border: Border.all(color: const Color(0xFF25D366).withValues(alpha: 0.5)),
                             ),
                             child: const Icon(
                               Icons.share_outlined,
@@ -390,7 +390,7 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
             height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.surfaceLight.withOpacity(0.5),
+              color: AppTheme.surfaceLight.withValues(alpha: 0.5),
               border: Border.all(
                 color: AppTheme.borderLight,
                 style: BorderStyle.solid,

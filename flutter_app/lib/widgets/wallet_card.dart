@@ -34,7 +34,7 @@ class WalletCard extends StatelessWidget {
           border: Border.all(color: AppTheme.border, width: 1),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.35),
+              color: Colors.black.withValues(alpha: 0.35),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -365,15 +365,15 @@ class _WalletDetailSheetState extends State<_WalletDetailSheet> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceLight.withOpacity(0.5),
+        color: AppTheme.surfaceLight.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border.withOpacity(0.5)),
+        border: Border.all(color: AppTheme.border.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 16,
-            backgroundColor: iconColor.withOpacity(0.15),
+            backgroundColor: iconColor.withValues(alpha: 0.15),
             child: Icon(icon, color: iconColor, size: 16),
           ),
           const SizedBox(width: 12),

@@ -111,7 +111,7 @@ class _FirstPoolOnboardingScreenState extends State<FirstPoolOnboardingScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppTheme.electricLime.withOpacity(0.15),
+                  color: AppTheme.electricLime.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.account_balance_wallet, color: AppTheme.electricLime, size: 28),
