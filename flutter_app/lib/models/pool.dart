@@ -136,4 +136,97 @@ class Pool {
       whatsappShareText: json['whatsapp_share_text'] ?? '',
     );
   }
+
+  static List<Pool> mockPools() {
+    final dericCreator = PoolCreator(
+      id: 'usr_deric_001',
+      username: 'deric',
+      displayName: 'Deric',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    );
+    final leratoCreator = PoolCreator(
+      id: 'usr_lerato_002',
+      username: 'lerato',
+      displayName: 'Lerato K.',
+      avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150',
+    );
+
+    return [
+      Pool(
+        id: 'pool_demo_1v1',
+        creatorId: 'usr_deric_001',
+        depositAmount: 50.0,
+        maxPlayers: 2,
+        currentPlayers: 1,
+        grossPool: 50.0,
+        platformFeePercent: 7.0,
+        platformFeeAmount: 7.0,
+        netPayout: 93.0,
+        status: 'OPEN',
+        description: '⚡ Premier League Derby Showdown! 1v1 quick clash',
+        createdAt: DateTime.now().toIso8601String(),
+        creator: dericCreator,
+        participants: [
+          PoolParticipant(
+            userId: 'usr_deric_001',
+            deposit: 50.0,
+            joinedAt: DateTime.now().toIso8601String(),
+            isWinner: false,
+            payout: 0.0,
+            username: 'deric',
+            displayName: 'Deric',
+            avatarUrl: dericCreator.avatarUrl,
+          ),
+        ],
+        oddsToWin: '50.00%',
+        slotsRemaining: 1,
+        isFull: false,
+        shareUrl: 'https://splitbet.co.za/pools/pool_demo_1v1',
+        whatsappShareText: 'Join my 1v1 SplitBet pool (R50)! Odds: 50%.',
+      ),
+      Pool(
+        id: 'pool_demo_4p',
+        creatorId: 'usr_lerato_002',
+        depositAmount: 100.0,
+        maxPlayers: 4,
+        currentPlayers: 2,
+        grossPool: 200.0,
+        platformFeePercent: 7.0,
+        platformFeeAmount: 28.0,
+        netPayout: 372.0,
+        status: 'OPEN',
+        description: '🎯 Friday Night 4-Way Winner Takes All (R100)',
+        createdAt: DateTime.now().toIso8601String(),
+        creator: leratoCreator,
+        participants: [
+          PoolParticipant(
+            userId: 'usr_lerato_002',
+            deposit: 100.0,
+            joinedAt: DateTime.now().toIso8601String(),
+            isWinner: false,
+            payout: 0.0,
+            username: 'lerato',
+            displayName: 'Lerato K.',
+            avatarUrl: leratoCreator.avatarUrl,
+          ),
+          PoolParticipant(
+            userId: 'usr_sipho_003',
+            deposit: 100.0,
+            joinedAt: DateTime.now().toIso8601String(),
+            isWinner: false,
+            payout: 0.0,
+            username: 'sipho',
+            displayName: 'Sipho M.',
+            avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+          ),
+        ],
+        oddsToWin: '25.00%',
+        slotsRemaining: 2,
+        isFull: false,
+        shareUrl: 'https://splitbet.co.za/pools/pool_demo_4p',
+        whatsappShareText: 'Join Lerato\'s 4-way SplitBet pot (R100 entry)!',
+      ),
+    ];
+  }
 }
+

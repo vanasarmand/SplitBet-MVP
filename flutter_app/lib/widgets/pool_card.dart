@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../models/pool.dart';
 import '../models/user.dart';
 import '../theme/app_theme.dart';
+import 'user_avatar.dart';
 
 class PoolCard extends StatefulWidget {
   final Pool pool;
@@ -33,6 +34,8 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
     final currencyFmt = NumberFormat.currency(symbol: 'R', decimalDigits: 0);
     final isJoined = pool.participants.any((p) => p.userId == widget.currentUser.id);
     final isSettled = pool.status == 'SETTLED';
+    final isWinner = isSettled && pool.winner?.id == widget.currentUser.id;
+    final hasLost = isSettled && isJoined && !isWinner;
     final isLocked = pool.status == 'LOCKED' || pool.status == 'FULL' || pool.status == 'RANDOM_SELECTION';
 
     return Container(
@@ -195,9 +198,10 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                     if (pool.creator != null)
                       Row(
                         children: [
-                          CircleAvatar(
+                          UserAvatar(
+                            avatarUrl: pool.creator!.avatarUrl,
                             radius: 12,
-                            backgroundImage: NetworkImage(pool.creator!.avatarUrl),
+                            displayName: pool.creator!.displayName,
                           ),
                           const SizedBox(width: 8),
                           Text(
@@ -253,23 +257,75 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppTheme.gold.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.gold.withValues(alpha: 0.5)),
+                          color: (isWinner
+                                  ? AppTheme.electricLime
+                                  : (hasLost ? const Color(0xFFFF5252) : AppTheme.gold))
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: (isWinner
+                                    ? AppTheme.electricLime
+                                    : (hasLost ? const Color(0xFFFF5252) : AppTheme.gold))
+                                .withValues(alpha: 0.5),
+                          ),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.emoji_events, color: AppTheme.gold, size: 24),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('WINNER SELECTED', style: TextStyle(color: AppTheme.gold, fontSize: 11, fontWeight: FontWeight.bold)),
-                                Text(
-                                  '${pool.winner!.displayName} won R${pool.netPayout.toStringAsFixed(0)}!',
-                                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
-                                ),
-                              ],
+                            UserAvatar(
+                              avatarUrl: pool.winner!.avatarUrl,
+                              radius: 20,
+                              displayName: pool.winner!.displayName,
+                              showBorder: true,
+                              borderColor: isWinner ? AppTheme.electricLime : AppTheme.gold,
+                              showWinnerCrown: true,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        isWinner
+                                            ? Icons.celebration
+                                            : (hasLost
+                                                ? Icons.sentiment_dissatisfied_outlined
+                                                : Icons.emoji_events),
+                                        color: isWinner
+                                            ? AppTheme.electricLime
+                                            : (hasLost ? const Color(0xFFFF5252) : AppTheme.gold),
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        isWinner
+                                            ? 'YOU WON THIS POOL!'
+                                            : (hasLost
+                                                ? 'YOU LOST • WINNER:'
+                                                : 'WINNER SELECTED:'),
+                                        style: TextStyle(
+                                          color: isWinner
+                                              ? AppTheme.electricLime
+                                              : (hasLost ? const Color(0xFFFF5252) : AppTheme.gold),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${pool.winner!.displayName} won R${pool.netPayout.toStringAsFixed(0)}!',
+                                    style: const TextStyle(
+                                      color: AppTheme.textPrimary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -368,10 +424,10 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
               shape: BoxShape.circle,
               border: Border.all(color: AppTheme.surface, width: 2),
             ),
-            child: CircleAvatar(
+            child: UserAvatar(
+              avatarUrl: p.avatarUrl,
               radius: 16,
-              backgroundColor: AppTheme.surfaceLight,
-              backgroundImage: NetworkImage(p.avatarUrl),
+              displayName: p.displayName,
             ),
           ),
         ),

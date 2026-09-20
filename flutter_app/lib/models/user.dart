@@ -22,6 +22,22 @@ class UserBalance {
       total: (json['total'] as num?)?.toDouble() ?? 0.0,
     );
   }
+
+  UserBalance copyWith({
+    String? userId,
+    String? currency,
+    double? available,
+    double? reserved,
+    double? total,
+  }) {
+    return UserBalance(
+      userId: userId ?? this.userId,
+      currency: currency ?? this.currency,
+      available: available ?? this.available,
+      reserved: reserved ?? this.reserved,
+      total: total ?? this.total,
+    );
+  }
 }
 
 class UserStats {
@@ -97,4 +113,94 @@ class AppUser {
       stats: json['stats'] != null ? UserStats.fromJson(json['stats']) : null,
     );
   }
+
+  static AppUser mockUser() {
+    return AppUser(
+      id: 'usr_deric_001',
+      username: 'deric',
+      displayName: 'Deric',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      phone: '+27 82 000 0001',
+      email: 'deric@splitbet.co.za',
+      verified: true,
+      subscriptionTier: 'Standard',
+      firstPoolCreated: true,
+      balance: UserBalance(
+        userId: 'usr_deric_001',
+        currency: 'ZAR',
+        available: 1500.0,
+        reserved: 0.0,
+        total: 1500.0,
+      ),
+      stats: UserStats(
+        activePools: 1,
+        completedPools: 5,
+        wins: 4,
+        losses: 1,
+        winRate: '80%',
+        totalWon: 3200.0,
+      ),
+    );
+  }
+
+  static AppUser createDemoUser({required String username, required String displayName, String? avatarUrl}) {
+    final uid = 'usr_${DateTime.now().millisecondsSinceEpoch}';
+    return AppUser(
+      id: uid,
+      username: username.toLowerCase().trim(),
+      displayName: displayName.trim(),
+      avatarUrl: (avatarUrl != null && avatarUrl.trim().isNotEmpty)
+          ? avatarUrl.trim()
+          : 'https://api.dicebear.com/7.x/bottts/png?seed=$username',
+      phone: '+27 82 000 0000',
+      email: '${username.toLowerCase().trim()}@splitbet.co.za',
+      verified: true,
+      subscriptionTier: 'Standard',
+      firstPoolCreated: false,
+      balance: UserBalance(
+        userId: uid,
+        currency: 'ZAR',
+        available: 1500.0,
+        reserved: 0.0,
+        total: 1500.0,
+      ),
+      stats: UserStats(
+        activePools: 0,
+        completedPools: 0,
+        wins: 0,
+        losses: 0,
+        winRate: '0%',
+        totalWon: 0.0,
+      ),
+    );
+  }
+
+  AppUser copyWith({
+    String? id,
+    String? username,
+    String? displayName,
+    String? avatarUrl,
+    String? phone,
+    String? email,
+    bool? verified,
+    String? subscriptionTier,
+    bool? firstPoolCreated,
+    UserBalance? balance,
+    UserStats? stats,
+  }) {
+    return AppUser(
+      id: id ?? this.id,
+      username: username ?? this.username,
+      displayName: displayName ?? this.displayName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      phone: phone ?? this.phone,
+      email: email ?? this.email,
+      verified: verified ?? this.verified,
+      subscriptionTier: subscriptionTier ?? this.subscriptionTier,
+      firstPoolCreated: firstPoolCreated ?? this.firstPoolCreated,
+      balance: balance ?? this.balance,
+      stats: stats ?? this.stats,
+    );
+  }
 }
+

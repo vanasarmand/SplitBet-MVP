@@ -3,8 +3,9 @@ import 'theme/app_theme.dart';
 import 'services/api_service.dart';
 import 'screens/home_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiService.initHost();
   final apiService = ApiService();
   apiService.connectWebSocket();
 

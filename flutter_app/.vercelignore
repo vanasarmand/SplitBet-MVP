@@ -1,0 +1,10 @@
+.dart_tool
+.idea
+android
+ios
+windows
+linux
+macos
+test
+build/app
+build/kotlin

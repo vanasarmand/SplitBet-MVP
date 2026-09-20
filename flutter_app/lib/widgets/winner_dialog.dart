@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'user_avatar.dart';
 
 class WinnerCelebrationDialog extends StatefulWidget {
   final String poolId;
@@ -8,6 +9,7 @@ class WinnerCelebrationDialog extends StatefulWidget {
   final double netPayout;
   final Map<String, dynamic>? proof;
   final bool isCurrentUserWinner;
+  final bool hasUserLost;
 
   const WinnerCelebrationDialog({
     super.key,
@@ -17,13 +19,15 @@ class WinnerCelebrationDialog extends StatefulWidget {
     required this.netPayout,
     this.proof,
     required this.isCurrentUserWinner,
+    this.hasUserLost = false,
   });
 
   @override
   State<WinnerCelebrationDialog> createState() => _WinnerCelebrationDialogState();
 }
 
-class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with SingleTickerProviderStateMixin {
+class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _scaleAnimation;
   bool _showProof = false;
@@ -42,6 +46,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
     _animController.forward();
   }
 
+
   @override
   void dispose() {
     _animController.dispose();
@@ -50,6 +55,13 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
 
   @override
   Widget build(BuildContext context) {
+    final bool isWinner = widget.isCurrentUserWinner;
+    final bool isLoser = widget.hasUserLost;
+
+    final Color accentColor = isWinner
+        ? AppTheme.electricLime
+        : (isLoser ? const Color(0xFFFF5252) : AppTheme.gold);
+
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -60,13 +72,10 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
           decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold,
-              width: 2,
-            ),
+            border: Border.all(color: accentColor, width: 2),
             boxShadow: [
               BoxShadow(
-                color: (widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold).withValues(alpha: 0.2),
+                color: accentColor.withValues(alpha: 0.25),
                 blurRadius: 30,
                 spreadRadius: 4,
               ),
@@ -75,54 +84,114 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Trophy / Crown
+              // Top Badge Icon
               Container(
                 width: 70,
                 height: 70,
                 decoration: BoxDecoration(
-                  color: (widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold).withValues(alpha: 0.15),
+                  color: accentColor.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  widget.isCurrentUserWinner ? Icons.celebration : Icons.emoji_events,
+                  isWinner
+                      ? Icons.celebration
+                      : (isLoser ? Icons.sentiment_dissatisfied_outlined : Icons.emoji_events),
                   size: 38,
-                  color: widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold,
+                  color: accentColor,
                 ),
               ),
               const SizedBox(height: 16),
 
+              // Title
               Text(
-                widget.isCurrentUserWinner ? 'YOU WON!' : 'WINNER SELECTED!',
+                isWinner
+                    ? 'YOU WON!'
+                    : (isLoser ? 'BETTER LUCK NEXT TIME!' : 'WINNER SELECTED!'),
+                textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.gold,
-                  fontSize: 22,
+                  color: accentColor,
+                  fontSize: 21,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 1.2,
+                  letterSpacing: 1.1,
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 4),
 
-              // Winner avatar
-              CircleAvatar(
-                radius: 36,
-                backgroundColor: AppTheme.surfaceLight,
-                backgroundImage: NetworkImage(widget.winnerAvatar),
+              // Subtitle for Loser or Observer
+              if (isLoser)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'You lost this pool round. Here is the winner:',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                )
+              else if (!isWinner)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'Pool has settled. Verified winner:',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                )
+              else
+                const SizedBox(height: 12),
+
+              // Winner Profile Pic (Prominently displayed!)
+              UserAvatar(
+                avatarUrl: widget.winnerAvatar,
+                radius: 42,
+                displayName: widget.winnerName,
+                showBorder: true,
+                borderColor: AppTheme.gold,
+                borderWidth: 2.5,
+                showWinnerCrown: true,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
+              // Winner Name & Status
               Text(
-                widget.winnerName,
+                isWinner ? '${widget.winnerName} (You)' : widget.winnerName,
                 style: const TextStyle(
                   color: AppTheme.textPrimary,
-                  fontSize: 18,
+                  fontSize: 19,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
+              if (isLoser)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppTheme.gold.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'WINNER',
+                      style: TextStyle(
+                        color: AppTheme.gold,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 14),
 
               // Payout Banner
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                 decoration: BoxDecoration(
                   color: AppTheme.surfaceElevated,
                   borderRadius: BorderRadius.circular(16),
@@ -130,15 +199,22 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                 ),
                 child: Column(
                   children: [
-                    const Text(
-                      'NET WINNING PAYOUT',
-                      style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
+                    Text(
+                      isWinner
+                          ? 'YOUR NET WINNING PAYOUT'
+                          : 'WINNER TOTAL PAYOUT',
+                      style: const TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'R ${widget.netPayout.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: AppTheme.electricLime,
+                      style: TextStyle(
+                        color: isWinner ? AppTheme.electricLime : AppTheme.gold,
                         fontSize: 26,
                         fontWeight: FontWeight.w900,
                       ),
@@ -146,7 +222,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
               // RNG Audit Proof Accordion
               InkWell(
@@ -157,14 +233,25 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.verified_user_outlined, size: 14, color: AppTheme.textSecondary),
+                      const Icon(
+                        Icons.verified_user_outlined,
+                        size: 14,
+                        color: AppTheme.textSecondary,
+                      ),
                       const SizedBox(width: 6),
                       Text(
-                        _showProof ? 'Hide Cryptographic Audit' : 'View Cryptographic Audit Proof',
-                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                        _showProof
+                            ? 'Hide Cryptographic Audit'
+                            : 'View Provably Fair Proof',
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                       Icon(
-                        _showProof ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        _showProof
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
                         size: 14,
                         color: AppTheme.textSecondary,
                       ),
@@ -174,7 +261,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
               ),
 
               if (_showProof && widget.proof != null) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -193,7 +280,7 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                 ),
               ],
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
               // Close button
               SizedBox(
@@ -201,8 +288,8 @@ class _WinnerCelebrationDialogState extends State<WinnerCelebrationDialog> with 
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: widget.isCurrentUserWinner ? AppTheme.electricLime : AppTheme.surfaceLight,
-                    foregroundColor: widget.isCurrentUserWinner ? Colors.black : AppTheme.textPrimary,
+                    backgroundColor: isWinner ? AppTheme.electricLime : AppTheme.surfaceLight,
+                    foregroundColor: isWinner ? Colors.black : AppTheme.textPrimary,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),

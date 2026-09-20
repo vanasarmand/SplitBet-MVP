@@ -233,6 +233,30 @@ async function runTests() {
   assert(admin.metrics.platform_revenue_zar >= 28, `Platform revenue accurately accounts for fees (Current: R${admin.metrics.platform_revenue_zar})`);
   assert(admin.metrics.settled_pools >= 1, `Settled pools count recorded: ${admin.metrics.settled_pools}`);
   assert(admin.audit_logs && admin.audit_logs.length > 0, `Audit logs stream active with ${admin.audit_logs.length} entries`);
+  assert(admin.audit_logs.some(l => l.action === 'REGISTER_USER'), 'Audit trail includes REGISTER_USER activity');
+
+  // ----------------------------------------------------
+  // TEST SUITE 8: User Game Statistics Verification
+  // ----------------------------------------------------
+  console.log('\n--- 8. User Game Statistics Verification ---');
+  const winnerUserRes = await request('GET', `/users/${settledPool.winner_id}`);
+  assert(winnerUserRes.status === 200, 'Winner user profile fetched');
+  const winnerStats = winnerUserRes.data.stats;
+  assert(winnerStats !== undefined, 'Winner profile has stats object');
+  assert(winnerStats.wins >= 1, `Winner has recorded win (wins: ${winnerStats.wins})`);
+  assert(winnerStats.completed_pools >= 1, `Winner has recorded completed pool (completed: ${winnerStats.completed_pools})`);
+  assert(winnerStats.total_won >= 372, `Winner total_won reflects payout (total_won: ${winnerStats.total_won})`);
+
+  const loserUserRes = await request('GET', `/users/${loserId}`);
+  assert(loserUserRes.status === 200, 'Loser user profile fetched');
+  const loserStats = loserUserRes.data.stats;
+  assert(loserStats !== undefined, 'Loser profile has stats object');
+  assert(loserStats.losses >= 1, `Loser has recorded loss (losses: ${loserStats.losses})`);
+  assert(loserStats.completed_pools >= 1, `Loser has recorded completed pool (completed: ${loserStats.completed_pools})`);
+
+  const allUsersRes = await request('GET', '/users');
+  assert(allUsersRes.status === 200, 'All users endpoint returned 200');
+  assert(allUsersRes.data.every(u => u.stats !== undefined), 'All users in list have hydrated stats object');
 
   console.log('\n====================================================');
   console.log(`🏁 Test Results: ${passed} Passed, ${failed} Failed`);

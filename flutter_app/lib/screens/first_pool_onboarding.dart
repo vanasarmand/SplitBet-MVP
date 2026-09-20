@@ -36,12 +36,9 @@ class _FirstPoolOnboardingScreenState extends State<FirstPoolOnboardingScreen> {
       );
       await widget.apiService.completeFirstPool(widget.user.id);
       widget.onCompleted();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error),
-        );
-      }
+    } catch (_) {
+      // Offline Demo Mode: simulate completion
+      widget.onCompleted();
     } finally {
       if (mounted) setState(() => _isCreating = false);
     }

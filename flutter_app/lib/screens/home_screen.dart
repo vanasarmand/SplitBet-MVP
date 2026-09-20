@@ -4,10 +4,14 @@ import 'package:flutter/services.dart';
 import '../models/user.dart';
 import '../models/pool.dart';
 import '../services/api_service.dart';
+import '../services/supabase_config.dart';
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wallet_card.dart';
 import '../widgets/pool_card.dart';
 import '../widgets/winner_dialog.dart';
+import '../widgets/user_avatar.dart';
+import '../services/camera_service.dart';
 import 'create_pool_sheet.dart';
 import 'profile_sheet.dart';
 import 'admin_dialog.dart';
@@ -23,12 +27,14 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<AppUser> _allUsers = [];
-  AppUser? _currentUser;
+  List<AppUser> _allUsers = [AppUser.mockUser()];
+  AppUser _currentUser = AppUser.mockUser();
   List<Pool> _pools = [];
   int _openCount = 0;
   bool _isLoading = true;
-  String _selectedFilter = 'all'; // 'all', '1v1', '3-4', '5-8', 'my_pools', 'settled'
+  bool _isServerConnected = false;
+  String _selectedFilter =
+      'all'; // 'all', '1v1', '3-4', '5-8', 'my_pools', 'settled'
 
   @override
   void initState() {
@@ -40,13 +46,32 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _initApp() async {
     try {
       final users = await widget.apiService.getUsers();
-      setState(() {
-        _allUsers = users;
-        _currentUser = users.firstWhere((u) => u.username == 'deric', orElse: () => users.first);
-      });
-      await _loadPools();
+      if (users.isNotEmpty && mounted) {
+        final initialUser = users.firstWhere(
+          (u) => u.username == 'deric',
+          orElse: () => users.first,
+        );
+        setState(() {
+          _allUsers = users;
+          _currentUser = initialUser;
+          _isServerConnected = true;
+        });
+        _refreshCurrentUser();
+        await _loadPools();
+      }
     } catch (e) {
       debugPrint('Init app error: $e');
+      if (mounted) {
+        setState(() {
+          _isServerConnected = false;
+          _allUsers = [AppUser.mockUser()];
+          _currentUser = AppUser.mockUser();
+          if (_pools.isEmpty) {
+            _pools = Pool.mockPools();
+            _openCount = _pools.where((p) => p.status == 'OPEN').length;
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -60,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (type == 'POOL_CREATED' || type == 'POOL_UPDATE') {
         _loadPools(showSpinner: false);
       } else if (type == 'WALLET_UPDATE') {
-        if (_currentUser != null && event['userId'] == _currentUser!.id) {
+        if (event['userId'] == _currentUser.id) {
           _refreshCurrentUser();
         }
       } else if (type == 'POOL_SETTLED') {
@@ -73,17 +98,36 @@ class _HomeScreenState extends State<HomeScreen> {
         final poolId = event['poolId'] ?? '';
         final proof = event['proof'] as Map<String, dynamic>?;
 
-        final isUserWinner = _currentUser != null && winner != null && winner['id'] == _currentUser!.id;
+        final isUserWinner = winner != null && winner['id'] == _currentUser.id;
+
+        // Check if current user was a participant in the settled pool
+        final poolData = event['pool'] as Map<String, dynamic>?;
+        bool isParticipant = false;
+        if (poolData != null && poolData['participants'] is List) {
+          final participants = poolData['participants'] as List;
+          isParticipant = participants.any((p) => (p is Map && p['user_id'] == _currentUser.id));
+        } else {
+          // Fallback: search existing pools list
+          final matchingPool = _pools.where((p) => p.id == poolId).firstOrNull;
+          if (matchingPool != null) {
+            isParticipant = matchingPool.participants.any((p) => p.userId == _currentUser.id);
+          }
+        }
+
+        final hasUserLost = isParticipant && !isUserWinner;
 
         showDialog(
           context: context,
           builder: (ctx) => WinnerCelebrationDialog(
             poolId: poolId,
             winnerName: winner?['display_name'] ?? 'Winner',
-            winnerAvatar: winner?['avatar_url'] ?? 'https://api.dicebear.com/7.x/bottts/png?seed=winner',
+            winnerAvatar:
+                winner?['avatar_url'] ??
+                'https://api.dicebear.com/7.x/bottts/png?seed=winner',
             netPayout: netPayout,
             proof: proof,
             isCurrentUserWinner: isUserWinner,
+            hasUserLost: hasUserLost,
           ),
         );
       }
@@ -95,27 +139,36 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final res = await widget.apiService.getPools(
         filter: _selectedFilter == 'all' ? null : _selectedFilter,
-        userId: _currentUser?.id,
+        userId: _currentUser.id,
       );
       if (mounted) {
         setState(() {
           _pools = res['pools'] as List<Pool>;
           _openCount = res['open_count'] ?? 0;
           _isLoading = false;
+          _isServerConnected = true;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          if (!_isServerConnected && _pools.isEmpty) {
+            _pools = Pool.mockPools();
+            _openCount = _pools.where((p) => p.status == 'OPEN').length;
+          }
+        });
+      }
     }
   }
 
   Future<void> _refreshCurrentUser() async {
-    if (_currentUser == null) return;
     try {
-      final updated = await widget.apiService.getUser(_currentUser!.id);
+      final updated = await widget.apiService.getUser(_currentUser.id);
       if (mounted) {
         setState(() {
           _currentUser = updated;
+          _isServerConnected = true;
         });
       }
     } catch (e) {
@@ -132,12 +185,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleJoinPool(Pool pool) async {
-    if (_currentUser == null) return;
-
-    if (_currentUser!.balance.available < pool.depositAmount) {
+    if (_currentUser.balance.available < pool.depositAmount) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Insufficient funds. You have R${_currentUser!.balance.available.toStringAsFixed(0)}, pool requires R${pool.depositAmount.toStringAsFixed(0)}. Please top-up via your Wallet.'),
+          content: Text(
+            'Insufficient funds. You have R${_currentUser.balance.available.toStringAsFixed(0)}, pool requires R${pool.depositAmount.toStringAsFixed(0)}. Please top-up via your Wallet.',
+          ),
           backgroundColor: AppTheme.error,
         ),
       );
@@ -159,11 +212,21 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Confirm Pool Entry', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+            const Text(
+              'Confirm Pool Entry',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
+            ),
             const SizedBox(height: 12),
             Text(
               'You are joining with ${pool.maxPlayers} players. Each participant has an equal ${pool.oddsToWin} chance to win R${pool.netPayout.toStringAsFixed(0)}.',
-              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+              style: const TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 16),
             Container(
@@ -176,8 +239,18 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Required Deposit', style: TextStyle(color: AppTheme.textSecondary)),
-                  Text('R ${pool.depositAmount.toStringAsFixed(2)}', style: const TextStyle(color: AppTheme.electricLime, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text(
+                    'Required Deposit',
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                  Text(
+                    'R ${pool.depositAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: AppTheme.electricLime,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -187,22 +260,88 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ElevatedButton(
                 onPressed: () async {
                   Navigator.pop(ctx);
-                  try {
-                    await widget.apiService.joinPool(poolId: pool.id, userId: _currentUser!.id);
-                    await _refreshCurrentUser();
-                    await _loadPools(showSpinner: false);
+                  if (_isServerConnected) {
+                    try {
+                      await widget.apiService.joinPool(
+                        poolId: pool.id,
+                        userId: _currentUser.id,
+                      );
+                      await _refreshCurrentUser();
+                      await _loadPools(showSpinner: false);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Successfully joined pool! Deposit of R${pool.depositAmount.toStringAsFixed(0)} reserved.',
+                            ),
+                            backgroundColor: AppTheme.surfaceElevated,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to join: $e'),
+                            backgroundColor: AppTheme.error,
+                          ),
+                        );
+                      }
+                    }
+                  } else {
+                    // Offline Demo Mode: simulate joining locally
+                    setState(() {
+                      final newAvail =
+                          (_currentUser.balance.available - pool.depositAmount)
+                              .clamp(0, double.infinity);
+                      final newRes =
+                          _currentUser.balance.reserved + pool.depositAmount;
+                      final currentStats = _currentUser.stats;
+                      final updatedStats = currentStats != null
+                          ? UserStats(
+                              activePools: currentStats.activePools + 1,
+                              completedPools: currentStats.completedPools,
+                              wins: currentStats.wins,
+                              losses: currentStats.losses,
+                              winRate: currentStats.winRate,
+                              totalWon: currentStats.totalWon,
+                            )
+                          : UserStats(
+                              activePools: 1,
+                              completedPools: 0,
+                              wins: 0,
+                              losses: 0,
+                              winRate: '0.0%',
+                              totalWon: 0.0,
+                            );
+                      _currentUser = _currentUser.copyWith(
+                        balance: _currentUser.balance.copyWith(
+                          available: newAvail.toDouble(),
+                          reserved: newRes.toDouble(),
+                        ),
+                        stats: updatedStats,
+                      );
+                      pool.participants.add(
+                        PoolParticipant(
+                          userId: _currentUser.id,
+                          username: _currentUser.username,
+                          displayName: _currentUser.displayName,
+                          avatarUrl: _currentUser.avatarUrl,
+                          deposit: pool.depositAmount,
+                          payout: 0.0,
+                          isWinner: false,
+                          joinedAt: DateTime.now().toIso8601String(),
+                        ),
+                      );
+                    });
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Successfully joined pool! Deposit of R${pool.depositAmount.toStringAsFixed(0)} reserved.'),
+                          content: Text(
+                            'Joined pool in Demo Mode! R${pool.depositAmount.toStringAsFixed(0)} reserved.',
+                          ),
                           backgroundColor: AppTheme.surfaceElevated,
                         ),
-                      );
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to join: $e'), backgroundColor: AppTheme.error),
                       );
                     }
                   }
@@ -211,9 +350,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   backgroundColor: AppTheme.electricLime,
                   foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
-                child: const Text('Confirm & Reserve Deposit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  'Confirm & Reserve Deposit',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -224,13 +368,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openCreatePoolSheet() {
-    if (_currentUser == null) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => CreatePoolSheet(
-        currentUser: _currentUser!,
+        currentUser: _currentUser,
         apiService: widget.apiService,
         onPoolCreated: () {
           _refreshCurrentUser();
@@ -241,14 +384,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openProfile() {
-    if (_currentUser == null) return;
+    _refreshCurrentUser();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => ProfileSheet(
-        user: _currentUser!,
+        user: _currentUser,
+        apiService: widget.apiService,
         onLogout: () {},
+        onUserUpdated: (updated) {
+          setState(() {
+            _currentUser = updated;
+            _allUsers = _allUsers.map((u) => u.id == updated.id ? updated : u).toList();
+          });
+        },
       ),
     );
   }
@@ -260,69 +410,743 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _showServerConfigDialog() {
+    int selectedTab = ApiService.isUsingSupabase ? 0 : 1;
+    final sbUrlCtrl = TextEditingController(text: SupabaseConfig.url);
+    final sbKeyCtrl = TextEditingController(text: SupabaseConfig.anonKey);
+    final ipCtrl = TextEditingController(text: ApiService.fullHostDisplay);
+    String? testStatus; // 'testing', 'success', 'failed'
+    String testMsg = '';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.cloud_sync_outlined, color: AppTheme.electricLime),
+              SizedBox(width: 10),
+              Text(
+                'Backend Settings',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Mode Selector: Supabase 24/7 vs Node Server
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setDialogState(() {
+                            selectedTab = 0;
+                            testStatus = null;
+                          }),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: selectedTab == 0 ? AppTheme.electricLime.withValues(alpha: 0.2) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: selectedTab == 0 ? AppTheme.electricLime : Colors.transparent,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.bolt, size: 16, color: selectedTab == 0 ? AppTheme.electricLime : AppTheme.textMuted),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Supabase 24/7',
+                                  style: TextStyle(
+                                    color: selectedTab == 0 ? AppTheme.textPrimary : AppTheme.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setDialogState(() {
+                            selectedTab = 1;
+                            testStatus = null;
+                          }),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: selectedTab == 1 ? AppTheme.electricLime.withValues(alpha: 0.2) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: selectedTab == 1 ? AppTheme.electricLime : Colors.transparent,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.dns_outlined, size: 16, color: selectedTab == 1 ? AppTheme.electricLime : AppTheme.textMuted),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Node.js / Tunnel',
+                                  style: TextStyle(
+                                    color: selectedTab == 1 ? AppTheme.textPrimary : AppTheme.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                if (selectedTab == 0) ...[
+                  const Text('Supabase Project URL:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: sbUrlCtrl,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'https://xyzcompany.supabase.co',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      filled: true,
+                      fillColor: AppTheme.surfaceElevated,
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('Supabase Anon / Public Key:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: sbKeyCtrl,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      hintText: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      filled: true,
+                      fillColor: AppTheme.surfaceElevated,
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '💡 Run `server/supabase_schema.sql` in your Supabase SQL Editor once to initialize all tables and logic.',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                  ),
+                ] else ...[
+                  const Text('Node.js Server / Tunnel URL:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: ipCtrl,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'https://xxx.trycloudflare.com or 192.168.1.134:4000',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      filled: true,
+                      fillColor: AppTheme.surfaceElevated,
+                      isDense: true,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '💡 Run `server/start-live.bat` on your PC to start local server & tunnel.',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: testStatus == 'testing'
+                          ? null
+                          : () async {
+                              setDialogState(() {
+                                testStatus = 'testing';
+                                testMsg = '';
+                              });
+                              bool ok = false;
+                              if (selectedTab == 0) {
+                                ok = await widget.apiService.testConnection(
+                                  sbUrlCtrl.text.trim(),
+                                  sbKeyCtrl.text.trim(),
+                                );
+                              } else {
+                                ok = await widget.apiService.testConnection(ipCtrl.text.trim());
+                              }
+                              setDialogState(() {
+                                testStatus = ok ? 'success' : 'failed';
+                                testMsg = ok ? 'Connection successful!' : 'Could not reach server';
+                              });
+                            },
+                      icon: testStatus == 'testing'
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.electricLime))
+                          : Icon(
+                              testStatus == 'success'
+                                  ? Icons.check_circle
+                                  : testStatus == 'failed'
+                                      ? Icons.error_outline
+                                      : Icons.network_check,
+                              size: 16,
+                              color: testStatus == 'success'
+                                  ? AppTheme.success
+                                  : testStatus == 'failed'
+                                      ? AppTheme.error
+                                      : AppTheme.textSecondary,
+                            ),
+                      label: Text(
+                        testStatus == 'testing'
+                            ? 'Testing...'
+                            : testStatus == 'success'
+                                ? 'Online!'
+                                : testStatus == 'failed'
+                                    ? 'Unreachable'
+                                    : 'Test Connection',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: testStatus == 'success'
+                              ? AppTheme.success
+                              : testStatus == 'failed'
+                                  ? AppTheme.error
+                                  : AppTheme.textSecondary,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: testStatus == 'success'
+                              ? AppTheme.success
+                              : testStatus == 'failed'
+                                  ? AppTheme.error
+                                  : AppTheme.border,
+                        ),
+                      ),
+                    ),
+                    if (testMsg.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          testMsg,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: testStatus == 'success' ? AppTheme.success : AppTheme.error,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                SupabaseConfig.resetToDefaultConfig();
+                await SupabaseService.init();
+                widget.apiService.connectWebSocket();
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  setState(() => _isLoading = true);
+                  await _initApp();
+                }
+              },
+              child: const Text('Default 24/7 Cloud', style: TextStyle(color: AppTheme.electricLime)),
+            ),
+            TextButton(
+              onPressed: () async {
+                SupabaseConfig.clearConfig();
+                ApiService.resetToDefaultHost();
+                Navigator.pop(ctx);
+                setState(() => _isLoading = true);
+                await _initApp();
+              },
+              child: const Text('Reset to Demo', style: TextStyle(color: Colors.amber)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (selectedTab == 0) {
+                  final url = sbUrlCtrl.text.trim();
+                  final key = sbKeyCtrl.text.trim();
+                  if (url.isNotEmpty && key.isNotEmpty) {
+                    SupabaseConfig.saveConfig(url, key);
+                    await SupabaseService.init();
+                    widget.apiService.connectWebSocket();
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (mounted) {
+                      setState(() => _isLoading = true);
+                      await _initApp();
+                    }
+                  }
+                } else {
+                  final newHost = ipCtrl.text.trim();
+                  if (newHost.isNotEmpty) {
+                    SupabaseConfig.clearConfig();
+                    ApiService.updateHost(newHost);
+                    widget.apiService.connectWebSocket();
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (mounted) {
+                      setState(() => _isLoading = true);
+                      await _initApp();
+                    }
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.electricLime,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Save & Connect'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showNewUserDialog() {
     final nameCtrl = TextEditingController();
     final userCtrl = TextEditingController();
+    String? capturedAvatar;
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final bool hasValidPhoto = capturedAvatar != null && capturedAvatar!.isNotEmpty;
+          final bool canCreate = hasValidPhoto &&
+              nameCtrl.text.trim().isNotEmpty &&
+              userCtrl.text.trim().isNotEmpty &&
+              !isSubmitting;
+
+          return AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: const Text(
+              'Register New User',
+              style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Camera Profile Photo Section (Mandatory requirement!)
+                  Center(
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: () async {
+                            final picked = await CameraService.showPhotoSourceSheet(
+                              ctx,
+                              title: 'Take Profile Picture',
+                            );
+                            if (picked != null) {
+                              setDialogState(() => capturedAvatar = picked);
+                            }
+                          },
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: 88,
+                                height: 88,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: hasValidPhoto
+                                        ? AppTheme.electricLime
+                                        : AppTheme.border,
+                                    width: hasValidPhoto ? 2.5 : 1.5,
+                                  ),
+                                  color: AppTheme.surfaceLight,
+                                ),
+                                child: ClipOval(
+                                  child: hasValidPhoto
+                                      ? UserAvatar(
+                                          avatarUrl: capturedAvatar,
+                                          radius: 44,
+                                        )
+                                      : Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: const [
+                                            Icon(
+                                              Icons.camera_alt,
+                                              size: 32,
+                                              color: AppTheme.electricLime,
+                                            ),
+                                            SizedBox(height: 4),
+                                            Text(
+                                              'Photo *',
+                                              style: TextStyle(
+                                                color: AppTheme.textSecondary,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: hasValidPhoto ? AppTheme.electricLime : AppTheme.surfaceElevated,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: AppTheme.surface, width: 2),
+                                  ),
+                                  child: Icon(
+                                    hasValidPhoto ? Icons.check : Icons.add_a_photo,
+                                    size: 14,
+                                    color: hasValidPhoto ? Colors.black : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () async {
+                            final picked = await CameraService.showPhotoSourceSheet(
+                              ctx,
+                              title: 'Take Profile Picture',
+                            );
+                            if (picked != null) {
+                              setDialogState(() => capturedAvatar = picked);
+                            }
+                          },
+                          icon: Icon(
+                            hasValidPhoto ? Icons.refresh : Icons.camera_alt,
+                            size: 15,
+                            color: AppTheme.electricLime,
+                          ),
+                          label: Text(
+                            hasValidPhoto ? 'Retake Photo' : 'Take Photo (Required)',
+                            style: const TextStyle(
+                              color: AppTheme.electricLime,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        if (!hasValidPhoto)
+                          const Text(
+                            '* Camera photo required to create account',
+                            style: TextStyle(
+                              color: AppTheme.textMuted,
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    controller: nameCtrl,
+                    style: const TextStyle(color: AppTheme.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'Full Name',
+                      hintText: 'e.g. Lerato Khumalo',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      labelStyle: const TextStyle(color: AppTheme.textSecondary),
+                      prefixIcon: const Icon(Icons.badge_outlined, color: AppTheme.textSecondary, size: 20),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.electricLime),
+                      ),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 14),
+
+                  TextField(
+                    controller: userCtrl,
+                    style: const TextStyle(color: AppTheme.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: 'Username',
+                      hintText: 'e.g. lerato_k',
+                      hintStyle: const TextStyle(color: AppTheme.textMuted),
+                      labelStyle: const TextStyle(color: AppTheme.textSecondary),
+                      prefixIcon: const Icon(Icons.alternate_email, color: AppTheme.textSecondary, size: 20),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppTheme.electricLime),
+                      ),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(color: AppTheme.textSecondary),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: canCreate
+                    ? () async {
+                        setDialogState(() => isSubmitting = true);
+                        final nav = Navigator.of(ctx);
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          AppUser newUser;
+                          if (_isServerConnected) {
+                            try {
+                              newUser = await widget.apiService.registerUser(
+                                username: userCtrl.text.trim(),
+                                displayName: nameCtrl.text.trim(),
+                                avatarUrl: capturedAvatar,
+                              );
+                              final updatedUsers = await widget.apiService.getUsers();
+                              if (mounted) setState(() => _allUsers = updatedUsers);
+                            } catch (e) {
+                              newUser = AppUser.createDemoUser(
+                                username: userCtrl.text.trim(),
+                                displayName: nameCtrl.text.trim(),
+                                avatarUrl: capturedAvatar,
+                              );
+                              if (mounted) {
+                                setState(() {
+                                  _allUsers = [..._allUsers, newUser];
+                                });
+                              }
+                            }
+                          } else {
+                            newUser = AppUser.createDemoUser(
+                              username: userCtrl.text.trim(),
+                              displayName: nameCtrl.text.trim(),
+                              avatarUrl: capturedAvatar,
+                            );
+                            if (mounted) {
+                              setState(() {
+                                _allUsers = [..._allUsers, newUser];
+                              });
+                            }
+                          }
+
+                          nav.pop();
+                          if (!mounted) return;
+                          setState(() => _currentUser = newUser);
+
+                          // Launch First Pool Onboarding if required
+                          if (!newUser.firstPoolCreated && mounted) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (c) => FirstPoolOnboardingScreen(
+                                  user: newUser,
+                                  apiService: widget.apiService,
+                                  onCompleted: () {
+                                    Navigator.pop(c);
+                                    if (_isServerConnected) {
+                                      _refreshCurrentUser();
+                                      _loadPools();
+                                    } else {
+                                      setState(() {
+                                        _currentUser = _currentUser.copyWith(
+                                          firstPoolCreated: true,
+                                        );
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          setDialogState(() => isSubmitting = false);
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text('Registration error: $e'),
+                              backgroundColor: AppTheme.error,
+                            ),
+                          );
+                        }
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.electricLime,
+                  foregroundColor: Colors.black,
+                  disabledBackgroundColor: AppTheme.surfaceLight,
+                  disabledForegroundColor: AppTheme.textMuted,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                      )
+                    : const Text('Create User', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // Confirm delete user popup on long press
+  void _confirmDeleteUser(AppUser userToDelete) {
+    if (_allUsers.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot delete account: At least one user account must remain.'),
+          backgroundColor: AppTheme.error,
+        ),
+      );
+      return;
+    }
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surface,
-        title: const Text('Register New User', style: TextStyle(color: AppTheme.textPrimary)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppTheme.error, size: 26),
+            SizedBox(width: 8),
+            Text('Delete Account?', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold)),
+          ],
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: nameCtrl,
-              style: const TextStyle(color: AppTheme.textPrimary),
-              decoration: const InputDecoration(labelText: 'Full Name', labelStyle: TextStyle(color: AppTheme.textSecondary)),
+            UserAvatar(
+              avatarUrl: userToDelete.avatarUrl,
+              radius: 36,
+              displayName: userToDelete.displayName,
+              showBorder: true,
+              borderColor: AppTheme.error,
             ),
-            TextField(
-              controller: userCtrl,
-              style: const TextStyle(color: AppTheme.textPrimary),
-              decoration: const InputDecoration(labelText: 'Username', labelStyle: TextStyle(color: AppTheme.textSecondary)),
+            const SizedBox(height: 12),
+            Text(
+              userToDelete.displayName,
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '@${userToDelete.username}',
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Are you sure you want to delete this user account?\n\nThis will remove @${userToDelete.username}, their wallet balance, and pool entries. This action cannot be undone.',
+              style: const TextStyle(color: AppTheme.textMuted, fontSize: 13, height: 1.4),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
           ElevatedButton(
             onPressed: () async {
-              if (nameCtrl.text.isEmpty || userCtrl.text.isEmpty) return;
-              final nav = Navigator.of(ctx);
+              Navigator.pop(ctx);
               final messenger = ScaffoldMessenger.of(context);
               try {
-                final newUser = await widget.apiService.registerUser(username: userCtrl.text.trim(), displayName: nameCtrl.text.trim());
-                nav.pop();
-                final updatedUsers = await widget.apiService.getUsers();
-                if (!mounted) return;
-                setState(() {
-                  _allUsers = updatedUsers;
-                  _currentUser = newUser;
-                });
-                // Launch First Pool Onboarding if required
-                if (!newUser.firstPoolCreated && mounted) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (c) => FirstPoolOnboardingScreen(
-                        user: newUser,
-                        apiService: widget.apiService,
-                        onCompleted: () {
-                          Navigator.pop(c);
-                          _refreshCurrentUser();
-                          _loadPools();
-                        },
-                      ),
-                    ),
-                  );
+                if (_isServerConnected) {
+                  try {
+                    await widget.apiService.deleteUser(userToDelete.id);
+                  } catch (_) {}
                 }
+
+                if (!mounted) return;
+                final remaining = _allUsers.where((u) => u.id != userToDelete.id).toList();
+
+                setState(() {
+                  _allUsers = remaining;
+                  if (_currentUser.id == userToDelete.id) {
+                    _currentUser = remaining.first;
+                  }
+                });
+
+                await _refreshCurrentUser();
+                await _loadPools();
+
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Account @${userToDelete.username} deleted successfully.'),
+                    backgroundColor: AppTheme.surfaceElevated,
+                  ),
+                );
               } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.error));
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to delete user: $e'),
+                    backgroundColor: AppTheme.error,
+                  ),
+                );
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.electricLime, foregroundColor: Colors.black),
-            child: const Text('Register'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -331,13 +1155,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_currentUser == null && _isLoading) {
-      return const Scaffold(
-        backgroundColor: AppTheme.background,
-        body: Center(child: CircularProgressIndicator(color: AppTheme.electricLime)),
-      );
-    }
-
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: SafeArea(
@@ -349,6 +1166,59 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // Demo User Quick Switcher Bar
             _buildDemoUserSwitcher(),
+
+            // Offline / Demo Warning Banner
+            if (!_isServerConnected)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.amber.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.wifi_off_rounded,
+                      color: Colors.amber,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Demo Mode • Backend offline (${ApiService.fullHostDisplay})',
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: _showServerConfigDialog,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          'Connect Backend',
+                          style: TextStyle(
+                            color: AppTheme.electricLime,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
 
             // Main Scrollable Area
             Expanded(
@@ -368,7 +1238,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: WalletCard(
-                        balance: _currentUser!.balance,
+                        balance: _currentUser.balance,
                         apiService: widget.apiService,
                         onRefresh: () {
                           _refreshCurrentUser();
@@ -387,7 +1257,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       const Center(
                         child: Padding(
                           padding: EdgeInsets.all(40),
-                          child: CircularProgressIndicator(color: AppTheme.electricLime),
+                          child: CircularProgressIndicator(
+                            color: AppTheme.electricLime,
+                          ),
                         ),
                       )
                     else if (_pools.isEmpty)
@@ -396,9 +1268,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Center(
                           child: Column(
                             children: [
-                              const Icon(Icons.sports_esports_outlined, size: 48, color: AppTheme.textMuted),
+                              const Icon(
+                                Icons.sports_esports_outlined,
+                                size: 48,
+                                color: AppTheme.textMuted,
+                              ),
                               const SizedBox(height: 12),
-                              const Text('No open pools matching filter', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+                              const Text(
+                                'No open pools matching filter',
+                                style: TextStyle(
+                                  color: AppTheme.textSecondary,
+                                  fontSize: 16,
+                                ),
+                              ),
                               const SizedBox(height: 12),
                               ElevatedButton(
                                 onPressed: _openCreatePoolSheet,
@@ -413,13 +1295,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       )
                     else
-                      ..._pools.map((pool) => PoolCard(
-                            key: ValueKey(pool.id),
-                            pool: pool,
-                            currentUser: _currentUser!,
-                            onJoinPool: _handleJoinPool,
-                            onWhatsAppShare: () {},
-                          )),
+                      ..._pools.map(
+                        (pool) => PoolCard(
+                          key: ValueKey(pool.id),
+                          pool: pool,
+                          currentUser: _currentUser,
+                          onJoinPool: _handleJoinPool,
+                          onWhatsAppShare: () {},
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -449,7 +1333,10 @@ class _HomeScreenState extends State<HomeScreen> {
             elevation: 8,
             onPressed: _openCreatePoolSheet,
             icon: const Icon(Icons.add, fontWeight: FontWeight.w900),
-            label: const Text('Create Pool', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            label: const Text(
+              'Create Pool',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
           ),
         ],
       ),
@@ -464,10 +1351,10 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Brand Logo: SplitBet
-          const Row(
+          // Brand Logo: SplitBet with status indicator
+          Row(
             children: [
-              Text(
+              const Text(
                 'Split',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
@@ -476,13 +1363,61 @@ class _HomeScreenState extends State<HomeScreen> {
                   letterSpacing: -0.5,
                 ),
               ),
-              Text(
+              const Text(
                 'Bet',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
                   fontSize: 26,
                   fontWeight: FontWeight.w400,
                   letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: _showServerConfigDialog,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: (ApiService.isUsingSupabase || _isServerConnected)
+                        ? AppTheme.electricLime.withValues(alpha: 0.15)
+                        : Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: (ApiService.isUsingSupabase || _isServerConnected)
+                          ? AppTheme.electricLime
+                          : Colors.amber,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.circle,
+                        size: 8,
+                        color: (ApiService.isUsingSupabase || _isServerConnected)
+                            ? AppTheme.electricLime
+                            : Colors.amber,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        ApiService.isUsingSupabase
+                            ? 'Supabase 24/7'
+                            : (_isServerConnected ? 'Live' : 'Demo'),
+                        style: TextStyle(
+                          color: (ApiService.isUsingSupabase || _isServerConnected)
+                              ? AppTheme.electricLime
+                              : Colors.amber,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -498,7 +1433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      'Hello ${_currentUser?.displayName ?? ''}',
+                      'Hello ${_currentUser.displayName}',
                       style: const TextStyle(
                         color: AppTheme.textSecondary,
                         fontSize: 13,
@@ -517,10 +1452,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 const SizedBox(width: 12),
-                CircleAvatar(
+                UserAvatar(
+                  avatarUrl: _currentUser.avatarUrl,
                   radius: 22,
-                  backgroundColor: AppTheme.surfaceLight,
-                  backgroundImage: NetworkImage(_currentUser?.avatarUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'),
+                  displayName: _currentUser.displayName,
                 ),
               ],
             ),
@@ -530,7 +1465,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Multi-User Quick Switcher Bar (For Seamless Multi-Account Testing!)
+  // Multi-User Quick Switcher Bar (For Seamless Multi-Account Testing & Management)
   Widget _buildDemoUserSwitcher() {
     return Container(
       height: 38,
@@ -542,33 +1477,72 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             alignment: Alignment.center,
-            child: const Text('Switch Account:', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Switch Account:',
+              style: TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           ..._allUsers.map((u) {
-            final isCurrent = _currentUser?.id == u.id;
+            final isCurrent = _currentUser.id == u.id;
             return Padding(
               padding: const EdgeInsets.only(right: 6),
-              child: ChoiceChip(
-                label: Text(u.displayName.split(' ')[0]),
-                selected: isCurrent,
-                selectedColor: AppTheme.electricLime,
-                backgroundColor: AppTheme.surface,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                labelStyle: TextStyle(
-                  color: isCurrent ? Colors.black : AppTheme.textSecondary,
-                  fontSize: 11,
-                  fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+              child: Tooltip(
+                message: isCurrent
+                    ? 'Active account (Hold to delete)'
+                    : 'Tap to switch • Hold to delete',
+                child: Material(
+                  color: isCurrent ? AppTheme.electricLime : AppTheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _switchUser(u),
+                    onLongPress: () => _confirmDeleteUser(u),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isCurrent ? AppTheme.electricLime : AppTheme.border,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          UserAvatar(
+                            avatarUrl: u.avatarUrl,
+                            radius: 9,
+                            displayName: u.displayName,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            u.displayName.split(' ')[0],
+                            style: TextStyle(
+                              color: isCurrent ? Colors.black : AppTheme.textSecondary,
+                              fontSize: 11,
+                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                onSelected: (sel) {
-                  if (sel) _switchUser(u);
-                },
               ),
             );
           }),
           ActionChip(
             label: const Text('+ New User'),
             backgroundColor: AppTheme.surfaceElevated,
-            labelStyle: const TextStyle(color: AppTheme.electricLime, fontSize: 11, fontWeight: FontWeight.bold),
+            labelStyle: const TextStyle(
+              color: AppTheme.electricLime,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
             onPressed: _showNewUserDialog,
           ),
         ],
@@ -578,8 +1552,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Sub-Header: Friends +, Open Bets count, and Filter dropdown
   Widget _buildSubHeader() {
+    // Aligns exactly with the text inside PoolCard (16 card margin + 20 card padding = 36)
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 36),
       child: Column(
         children: [
           // Friends + row on top right matching screenshot
@@ -588,10 +1563,16 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               InkWell(
                 onTap: () {
-                  Clipboard.setData(const ClipboardData(text: 'https://splitbet.co.za/invite?ref=deric'));
+                  Clipboard.setData(
+                    const ClipboardData(
+                      text: 'https://splitbet.co.za/invite?ref=deric',
+                    ),
+                  );
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Invite link copied! Send to friends to play 1v1.'),
+                      content: Text(
+                        'Invite link copied! Send to friends to play 1v1.',
+                      ),
                       backgroundColor: AppTheme.surfaceElevated,
                     ),
                   );
@@ -615,7 +1596,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // Open Bets Count
               Text(
-                '$_openCount Open Bets',
+                '$_openCount ${_openCount == 1 ? "Open Bet" : "Open Bets"}',
                 style: const TextStyle(
                   color: AppTheme.textPrimary,
                   fontSize: 15,

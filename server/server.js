@@ -45,6 +45,49 @@ function calculateProbability(playerCount) {
   return `${(100 / playerCount).toFixed(2)}%`;
 }
 
+// Helper to compute user game statistics dynamically
+function getUserStats(userId) {
+  const activePoolsCount = db.prepare(`
+    SELECT COUNT(DISTINCT pp.pool_id) as count
+    FROM pool_participants pp
+    JOIN pools p ON p.id = pp.pool_id
+    WHERE pp.user_id = ? AND p.status IN ('OPEN', 'FULL', 'LOCKED', 'RANDOM_SELECTION')
+  `).get(userId).count;
+
+  const completedPoolsCount = db.prepare(`
+    SELECT COUNT(DISTINCT pp.pool_id) as count
+    FROM pool_participants pp
+    JOIN pools p ON p.id = pp.pool_id
+    WHERE pp.user_id = ? AND p.status = 'SETTLED'
+  `).get(userId).count;
+
+  const winsCount = db.prepare(`
+    SELECT COUNT(DISTINCT pp.pool_id) as count
+    FROM pool_participants pp
+    JOIN pools p ON p.id = pp.pool_id
+    WHERE pp.user_id = ? AND (pp.is_winner = 1 OR p.winner_id = ?) AND p.status = 'SETTLED'
+  `).get(userId, userId).count;
+
+  const totalWon = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN pp.payout > 0 THEN pp.payout ELSE p.net_payout END), 0.0) as total
+    FROM pool_participants pp
+    JOIN pools p ON p.id = pp.pool_id
+    WHERE pp.user_id = ? AND (pp.is_winner = 1 OR p.winner_id = ?) AND p.status = 'SETTLED'
+  `).get(userId, userId).total;
+
+  const lossesCount = Math.max(0, completedPoolsCount - winsCount);
+  const winRate = completedPoolsCount > 0 ? `${((winsCount / completedPoolsCount) * 100).toFixed(1)}%` : '0.0%';
+
+  return {
+    active_pools: activePoolsCount,
+    completed_pools: completedPoolsCount,
+    wins: winsCount,
+    losses: lossesCount,
+    win_rate: winRate,
+    total_won: Number(totalWon.toFixed(2))
+  };
+}
+
 // ----------------- USERS API -----------------
 
 // List all available demo users
@@ -52,7 +95,8 @@ app.get('/api/users', (req, res) => {
   const users = db.prepare('SELECT * FROM users ORDER BY created_at ASC').all();
   const result = users.map(u => ({
     ...u,
-    balance: getUserBalance(u.id)
+    balance: getUserBalance(u.id),
+    stats: getUserStats(u.id)
   }));
   res.json(result);
 });
@@ -62,52 +106,16 @@ app.get('/api/users/:id', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const balance = getUserBalance(user.id);
-
-  // Stats
-  const activePoolsCount = db.prepare(`
-    SELECT COUNT(DISTINCT pool_id) as count
-    FROM pool_participants pp
-    JOIN pools p ON p.id = pp.pool_id
-    WHERE pp.user_id = ? AND p.status IN ('OPEN', 'FULL', 'LOCKED', 'RANDOM_SELECTION')
-  `).get(user.id).count;
-
-  const completedPoolsCount = db.prepare(`
-    SELECT COUNT(DISTINCT pool_id) as count
-    FROM pool_participants pp
-    JOIN pools p ON p.id = pp.pool_id
-    WHERE pp.user_id = ? AND p.status = 'SETTLED'
-  `).get(user.id).count;
-
-  const winsCount = db.prepare(`
-    SELECT COUNT(*) as count
-    FROM pool_participants
-    WHERE user_id = ? AND is_winner = 1
-  `).get(user.id).count;
-
-  const totalWon = db.prepare(`
-    SELECT COALESCE(SUM(payout), 0.0) as total
-    FROM pool_participants
-    WHERE user_id = ? AND is_winner = 1
-  `).get(user.id).total;
-
   res.json({
     ...user,
-    balance,
-    stats: {
-      active_pools: activePoolsCount,
-      completed_pools: completedPoolsCount,
-      wins: winsCount,
-      losses: Math.max(0, completedPoolsCount - winsCount),
-      win_rate: completedPoolsCount > 0 ? `${((winsCount / completedPoolsCount) * 100).toFixed(1)}%` : '0.0%',
-      total_won: Number(totalWon.toFixed(2))
-    }
+    balance: getUserBalance(user.id),
+    stats: getUserStats(user.id)
   });
 });
 
 // Register new user
 app.post('/api/users', (req, res) => {
-  const { username, display_name, phone, email } = req.body;
+  const { username, display_name, phone, email, avatar_url } = req.body;
   if (!username || !display_name) {
     return res.status(400).json({ error: 'Username and display name are required' });
   }
@@ -119,26 +127,82 @@ app.post('/api/users', (req, res) => {
 
   const id = `usr_${uuidv4().substring(0, 8)}`;
   const now = new Date().toISOString();
-  const avatar_url = `https://api.dicebear.com/7.x/bottts/png?seed=${username}`;
+  const final_avatar = (avatar_url && avatar_url.trim().length > 0)
+    ? avatar_url.trim()
+    : `https://api.dicebear.com/7.x/bottts/png?seed=${username}`;
 
   db.prepare(`
     INSERT INTO users (id, username, display_name, avatar_url, phone, email, verified, first_pool_created, created_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)
-  `).run(id, username, display_name, avatar_url, phone || '+27 82 000 0000', email || `${username}@example.com`, now);
+  `).run(id, username, display_name, final_avatar, phone || '+27 82 000 0000', email || `${username}@example.com`, now);
 
   // Initial welcome funding
   recordDeposit(id, 1000.0, 'WELCOME_BONUS');
+  recordAudit(id, 'REGISTER_USER', 'users', id, `Registered user @${username} (${display_name}) with R1,000 welcome bonus`);
 
   const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   res.status(201).json({
     ...newUser,
-    balance: getUserBalance(id)
+    balance: getUserBalance(id),
+    stats: getUserStats(id)
   });
+});
+
+// Update user avatar
+app.patch('/api/users/:id/avatar', (req, res) => {
+  const { avatar_url } = req.body;
+  if (!avatar_url) {
+    return res.status(400).json({ error: 'avatar_url is required' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatar_url, req.params.id);
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+
+  res.json({
+    ...updated,
+    balance: getUserBalance(updated.id),
+    stats: getUserStats(updated.id)
+  });
+});
+
+// Delete user
+app.delete('/api/users/:id', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const deleteTx = db.transaction(() => {
+    // Delete ledger entries for this user
+    db.prepare('DELETE FROM ledger_entries WHERE user_id = ?').run(req.params.id);
+    // Delete pool participant entries
+    db.prepare('DELETE FROM pool_participants WHERE user_id = ?').run(req.params.id);
+    // Clean up pools where user was creator
+    const createdPools = db.prepare('SELECT id FROM pools WHERE creator_id = ?').all(req.params.id);
+    for (const p of createdPools) {
+      db.prepare('DELETE FROM pool_participants WHERE pool_id = ?').run(p.id);
+      db.prepare('DELETE FROM ledger_entries WHERE pool_id = ?').run(p.id);
+      db.prepare('DELETE FROM pools WHERE id = ?').run(p.id);
+    }
+    // Remove as winner from any pools
+    db.prepare('UPDATE pools SET winner_id = NULL WHERE winner_id = ?').run(req.params.id);
+    // Delete user row
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  });
+
+  deleteTx();
+  res.json({ success: true, deleted_id: req.params.id });
 });
 
 // Mark first pool onboarding completed
 app.post('/api/users/:id/complete-first-pool', (req, res) => {
   db.prepare('UPDATE users SET first_pool_created = 1 WHERE id = ?').run(req.params.id);
+  recordAudit(req.params.id, 'COMPLETE_ONBOARDING', 'users', req.params.id, 'Completed first pool creation onboarding');
   res.json({ success: true });
 });
 
@@ -454,17 +518,20 @@ app.post('/api/wallet/:userId/deposit', (req, res) => {
 app.get('/api/admin/overview', (req, res) => {
   const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
   const totalPools = db.prepare('SELECT COUNT(*) as count FROM pools').get().count;
-  const activePools = db.prepare("SELECT COUNT(*) as count FROM pools WHERE status IN ('OPEN', 'FULL', 'LOCKED')").get().count;
+  const activePools = db.prepare("SELECT COUNT(*) as count FROM pools WHERE status IN ('OPEN', 'FULL', 'LOCKED', 'RANDOM_SELECTION')").get().count;
   const settledPools = db.prepare("SELECT COUNT(*) as count FROM pools WHERE status = 'SETTLED'").get().count;
 
-  // Financial reconciliation: platform revenue
-  const platformRevenue = db.prepare("SELECT COALESCE(SUM(amount), 0.0) as revenue FROM ledger_entries WHERE account_type = 'PLATFORM_REVENUE'").get().revenue;
+  // Financial reconciliation: platform revenue (ledger + settled pools fallback)
+  let platformRevenue = db.prepare("SELECT COALESCE(SUM(amount), 0.0) as revenue FROM ledger_entries WHERE account_type = 'PLATFORM_REVENUE' AND status = 'SETTLED'").get().revenue;
+  if (!platformRevenue || platformRevenue === 0) {
+    platformRevenue = db.prepare("SELECT COALESCE(SUM(platform_fee_amount), 0.0) as revenue FROM pools WHERE status = 'SETTLED'").get().revenue;
+  }
 
   // Total gross volume
   const totalVolume = db.prepare("SELECT COALESCE(SUM(gross_pool), 0.0) as volume FROM pools WHERE status = 'SETTLED'").get().volume;
 
   // Recent audit logs
-  const auditLogs = db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 30').all();
+  const auditLogs = db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 50').all();
 
   res.json({
     metrics: {
@@ -486,6 +553,8 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`⚡ SplitBet Backend API & WebSocket running on port ${PORT}`);
+  console.log(`   - Local:   http://localhost:${PORT}`);
+  console.log(`   - Network: http://192.168.1.134:${PORT}`);
 });

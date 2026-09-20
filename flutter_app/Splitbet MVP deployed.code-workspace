@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"name": "SplitBet App (Flutter)",
+			"path": "."
+		},
+		{
+			"name": "SplitBet Server (Node.js)",
+			"path": "../server"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/.git": true,
+			"**/.DS_Store": true
+		},
+		"editor.formatOnSave": true
+	}
+}

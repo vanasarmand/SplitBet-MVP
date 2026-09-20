@@ -1,12 +1,13 @@
 {
-    "name": "flutter_app",
-    "short_name": "flutter_app",
+    "name": "SplitBet — Social Micro-Betting Pools",
+    "short_name": "SplitBet",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0E0E10",
+    "theme_color": "#0E0E10",
+    "description": "Real-time social micro-betting pools with instant settlement and provably fair payouts.",
     "orientation": "portrait-primary",
+    "categories": ["entertainment", "finance", "games"],
     "prefer_related_applications": false,
     "icons": [
         {
