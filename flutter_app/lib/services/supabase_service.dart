@@ -311,6 +311,19 @@ class SupabaseService {
     return Pool.fromJson(Map<String, dynamic>.from(res));
   }
 
+  // Delete pool
+  Future<void> deletePool(String poolId) async {
+    try {
+      await _client.rpc('delete_pool', params: {'p_pool_id': poolId});
+      return;
+    } catch (_) {
+      // Fallback direct table delete
+      await _client.from('pool_participants').delete().eq('pool_id', poolId);
+      await _client.from('ledger_entries').delete().eq('pool_id', poolId);
+      await _client.from('pools').delete().eq('id', poolId);
+    }
+  }
+
   // 8. Get wallet & transactions
   Future<Map<String, dynamic>> getWallet(String userId) async {
     final balanceRes = await _client.rpc('get_user_balance', params: {'p_user_id': userId});

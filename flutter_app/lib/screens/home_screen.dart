@@ -82,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final type = event['type'];
       if (!mounted) return;
 
-      if (type == 'POOL_CREATED' || type == 'POOL_UPDATE') {
+      if (type == 'POOL_CREATED' || type == 'POOL_UPDATE' || type == 'POOL_DELETED') {
         _loadPools(showSpinner: false);
       } else if (type == 'WALLET_UPDATE') {
         if (event['userId'] == _currentUser.id) {
@@ -143,7 +143,14 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (mounted) {
         setState(() {
-          _pools = res['pools'] as List<Pool>;
+          var loadedPools = res['pools'] as List<Pool>;
+          // Strict isolation: Settled pools only show in the settled filter
+          if (_selectedFilter != 'settled') {
+            loadedPools = loadedPools.where((p) => p.status != 'SETTLED').toList();
+          } else {
+            loadedPools = loadedPools.where((p) => p.status == 'SETTLED').toList();
+          }
+          _pools = loadedPools;
           _openCount = res['open_count'] ?? 0;
           _isLoading = false;
           _isServerConnected = true;
@@ -154,7 +161,13 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _isLoading = false;
           if (!_isServerConnected && _pools.isEmpty) {
-            _pools = Pool.mockPools();
+            var mock = Pool.mockPools();
+            if (_selectedFilter == 'settled') {
+              mock = mock.where((p) => p.status == 'SETTLED').toList();
+            } else {
+              mock = mock.where((p) => p.status != 'SETTLED').toList();
+            }
+            _pools = mock;
             _openCount = _pools.where((p) => p.status == 'OPEN').length;
           }
         });
@@ -1153,6 +1166,137 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Confirm delete settled pool dialog
+  void _confirmDeletePool(Pool poolToDelete) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever_rounded, color: AppTheme.error, size: 26),
+            SizedBox(width: 8),
+            Text(
+              'Delete Settled Pool?',
+              style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Pool ID:', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      Text(
+                        poolToDelete.id,
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Winner:', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      Text(
+                        poolToDelete.winner?.displayName ?? 'Settled',
+                        style: const TextStyle(
+                          color: AppTheme.electricLime,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Net Payout:', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                      Text(
+                        'R ${poolToDelete.netPayout.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Are you sure you want to delete this settled pool from history?\n\nThis permanently removes the record and associated ledger/audit traces. This cannot be undone.',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                if (_isServerConnected) {
+                  await widget.apiService.deletePool(poolToDelete.id);
+                }
+                setState(() {
+                  _pools.removeWhere((p) => p.id == poolToDelete.id);
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Pool ${poolToDelete.id} removed from history.'),
+                      backgroundColor: AppTheme.success,
+                    ),
+                  );
+                }
+                _loadPools(showSpinner: false);
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to delete pool: $e'),
+                      backgroundColor: AppTheme.error,
+                    ),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.error,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1268,27 +1412,40 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Center(
                           child: Column(
                             children: [
-                              const Icon(
-                                Icons.sports_esports_outlined,
+                              Icon(
+                                _selectedFilter == 'settled'
+                                    ? Icons.history_toggle_off_rounded
+                                    : Icons.sports_esports_outlined,
                                 size: 48,
                                 color: AppTheme.textMuted,
                               ),
                               const SizedBox(height: 12),
-                              const Text(
-                                'No open pools matching filter',
-                                style: TextStyle(
+                              Text(
+                                _selectedFilter == 'settled'
+                                    ? 'No settled pools in history'
+                                    : 'No open pools matching filter',
+                                style: const TextStyle(
                                   color: AppTheme.textSecondary,
                                   fontSize: 16,
                                 ),
                               ),
                               const SizedBox(height: 12),
                               ElevatedButton(
-                                onPressed: _openCreatePoolSheet,
+                                onPressed: _selectedFilter == 'settled'
+                                    ? () {
+                                        setState(() => _selectedFilter = 'all');
+                                        _loadPools();
+                                      }
+                                    : _openCreatePoolSheet,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppTheme.electricLime,
                                   foregroundColor: Colors.black,
                                 ),
-                                child: const Text('Create the First Pool'),
+                                child: Text(
+                                  _selectedFilter == 'settled'
+                                      ? 'View Active Pools'
+                                      : 'Create the First Pool',
+                                ),
                               ),
                             ],
                           ),
@@ -1302,6 +1459,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           currentUser: _currentUser,
                           onJoinPool: _handleJoinPool,
                           onWhatsAppShare: () {},
+                          onDeletePool: _confirmDeletePool,
                         ),
                       ),
                   ],
@@ -1594,9 +1752,11 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Open Bets Count
+              // Open / Settled Bets Count
               Text(
-                '$_openCount ${_openCount == 1 ? "Open Bet" : "Open Bets"}',
+                _selectedFilter == 'settled'
+                    ? '${_pools.length} ${_pools.length == 1 ? "Settled Pool" : "Settled Pools"}'
+                    : '$_openCount ${_openCount == 1 ? "Open Bet" : "Open Bets"}',
                 style: const TextStyle(
                   color: AppTheme.textPrimary,
                   fontSize: 15,

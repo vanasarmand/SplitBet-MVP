@@ -12,6 +12,7 @@ class PoolCard extends StatefulWidget {
   final AppUser currentUser;
   final Function(Pool) onJoinPool;
   final VoidCallback onWhatsAppShare;
+  final Function(Pool)? onDeletePool;
 
   const PoolCard({
     super.key,
@@ -19,6 +20,7 @@ class PoolCard extends StatefulWidget {
     required this.currentUser,
     required this.onJoinPool,
     required this.onWhatsAppShare,
+    this.onDeletePool,
   });
 
   @override
@@ -123,7 +125,7 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                       ),
                       const Spacer(),
                       // Status Badge
-                      if (isSettled)
+                      if (isSettled) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
@@ -135,7 +137,34 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                             'SETTLED',
                             style: TextStyle(color: AppTheme.gold, fontSize: 10, fontWeight: FontWeight.bold),
                           ),
-                        )
+                        ),
+                        if (widget.onDeletePool != null) ...[
+                          const SizedBox(width: 8),
+                          Tooltip(
+                            message: 'Delete Settled Pool',
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => widget.onDeletePool!(pool),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.redAccent,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ]
                       else if (isLocked)
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -337,39 +366,63 @@ class _PoolCardState extends State<PoolCard> with SingleTickerProviderStateMixin
                     // Action Buttons: Join & WhatsApp Share
                     Row(
                       children: [
-                        // Main Action (Join / Status)
-                        Expanded(
-                          flex: 3,
-                          child: ElevatedButton(
-                            onPressed: (pool.status == 'OPEN' && !isJoined)
-                                ? () => widget.onJoinPool(pool)
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.electricLime,
-                              foregroundColor: Colors.black,
-                              disabledBackgroundColor: AppTheme.surfaceLight,
-                              disabledForegroundColor: AppTheme.textMuted,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
+                        // Main Action (Join / Status / Delete if Settled)
+                        if (isSettled && widget.onDeletePool != null)
+                          Expanded(
+                            flex: 3,
+                            child: OutlinedButton.icon(
+                              onPressed: () => widget.onDeletePool!(pool),
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                              label: const Text(
+                                'Delete Settled Pool',
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
                               ),
                             ),
-                            child: Text(
-                              isSettled
-                                  ? 'Pool Settled'
-                                  : isJoined
-                                      ? 'You Joined • Waiting...'
-                                      : pool.status != 'OPEN'
-                                          ? 'Pool Full / Locked'
-                                          : 'Join Pool (Deposit R${pool.depositAmount.toStringAsFixed(0)})',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
+                          )
+                        else
+                          Expanded(
+                            flex: 3,
+                            child: ElevatedButton(
+                              onPressed: (pool.status == 'OPEN' && !isJoined)
+                                  ? () => widget.onJoinPool(pool)
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.electricLime,
+                                foregroundColor: Colors.black,
+                                disabledBackgroundColor: AppTheme.surfaceLight,
+                                disabledForegroundColor: AppTheme.textMuted,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: Text(
+                                isSettled
+                                    ? 'Pool Settled'
+                                    : isJoined
+                                        ? 'You Joined • Waiting...'
+                                        : pool.status != 'OPEN'
+                                            ? 'Pool Full / Locked'
+                                            : 'Join Pool (Deposit R${pool.depositAmount.toStringAsFixed(0)})',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
-                        ),
                         const SizedBox(width: 10),
                         // WhatsApp Share Button (PDF Section 13)
                         InkWell(

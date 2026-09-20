@@ -438,6 +438,20 @@ class ApiService {
     throw Exception(errorMsg);
   }
 
+  // Delete pool (e.g. remove settled pool from history)
+  Future<void> deletePool(String poolId) async {
+    if (isUsingSupabase) {
+      return supabaseService.deletePool(poolId);
+    }
+
+    final res = await http.delete(Uri.parse('$baseUrl/pools/$poolId')).timeout(const Duration(seconds: 5));
+    if (res.statusCode != 200) {
+      final data = _safeJsonDecode(res, fallbackMessage: 'Failed to delete pool');
+      final errorMsg = (data is Map && data['error'] != null) ? data['error'] : 'Failed to delete pool';
+      throw Exception(errorMsg);
+    }
+  }
+
   // Get wallet details & ledger transactions
   Future<Map<String, dynamic>> getWallet(String userId) async {
     if (isUsingSupabase) {

@@ -307,14 +307,18 @@ BEGIN
         SELECT p.id
         FROM public.pools p
         WHERE
-            (p_filter IS NULL OR p_filter = 'all' OR
-             (p_filter = '1v1' AND p.max_players = 2) OR
-             (p_filter = '3-4' AND p.max_players IN (3, 4)) OR
-             (p_filter = '5-8' AND p.max_players >= 5) OR
+            (
              (p_filter = 'settled' AND p.status = 'SETTLED') OR
-             (p_filter = 'my_pools' AND p_user_id IS NOT NULL AND EXISTS (
-                 SELECT 1 FROM public.pool_participants pp WHERE pp.pool_id = p.id AND pp.user_id = p_user_id
-             )))
+             (p.status != 'SETTLED' AND (
+                 p_filter IS NULL OR p_filter = 'all' OR
+                 (p_filter = '1v1' AND p.max_players = 2) OR
+                 (p_filter = '3-4' AND p.max_players IN (3, 4)) OR
+                 (p_filter = '5-8' AND p.max_players >= 5) OR
+                 (p_filter = 'my_pools' AND p_user_id IS NOT NULL AND EXISTS (
+                     SELECT 1 FROM public.pool_participants pp WHERE pp.pool_id = p.id AND pp.user_id = p_user_id
+                 ))
+             ))
+            )
         ORDER BY
             CASE p.status WHEN 'OPEN' THEN 1 WHEN 'FULL' THEN 2 WHEN 'LOCKED' THEN 3 ELSE 4 END,
             p.created_at DESC
@@ -424,6 +428,24 @@ BEGIN
         'proof', v_proof,
         'settled_at', v_now
     );
+END;
+$$;
+
+-- 5b. Delete Pool (e.g. remove settled pool from history)
+CREATE OR REPLACE FUNCTION public.delete_pool(p_pool_id TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    DELETE FROM public.pool_participants WHERE pool_id = p_pool_id;
+    DELETE FROM public.ledger_entries WHERE pool_id = p_pool_id;
+    DELETE FROM public.pools WHERE id = p_pool_id;
+
+    INSERT INTO public.audit_logs (actor, action, entity, entity_id, details, timestamp)
+    VALUES ('ADMIN', 'DELETE_POOL', 'pools', p_pool_id, 'Deleted pool ' || p_pool_id, NOW()::text);
+
+    RETURN jsonb_build_object('success', true, 'deleted_id', p_pool_id);
 END;
 $$;
 

@@ -252,19 +252,24 @@ app.get('/api/pools', (req, res) => {
 
   if (filter === '1v1') {
     conditions.push('max_players = 2');
+    conditions.push("status != 'SETTLED'");
   } else if (filter === '3-4') {
     conditions.push('max_players IN (3, 4)');
+    conditions.push("status != 'SETTLED'");
   } else if (filter === '5-8') {
     conditions.push('max_players >= 5');
+    conditions.push("status != 'SETTLED'");
   } else if (filter === 'open') {
     conditions.push("status = 'OPEN'");
   } else if (filter === 'settled') {
     conditions.push("status = 'SETTLED'");
-  }
-
-  if (filter === 'my_pools' && user_id) {
+  } else if (filter === 'my_pools' && user_id) {
     conditions.push(`id IN (SELECT pool_id FROM pool_participants WHERE user_id = ?)`);
+    conditions.push("status != 'SETTLED'");
     params.push(user_id);
+  } else {
+    // Default 'all': Only show active/open pools, NOT settled pools
+    conditions.push("status != 'SETTLED'");
   }
 
   if (conditions.length > 0) {
@@ -288,6 +293,27 @@ app.get('/api/pools/:id', (req, res) => {
   const pool = getPoolDetails(req.params.id);
   if (!pool) return res.status(404).json({ error: 'Pool not found' });
   res.json(pool);
+});
+
+// Delete pool (e.g. remove settled pool from history)
+app.delete('/api/pools/:id', (req, res) => {
+  const pool = db.prepare('SELECT * FROM pools WHERE id = ?').get(req.params.id);
+  if (!pool) return res.status(404).json({ error: 'Pool not found' });
+
+  const deleteTx = db.transaction(() => {
+    // Delete pool participants
+    db.prepare('DELETE FROM pool_participants WHERE pool_id = ?').run(req.params.id);
+    // Delete ledger entries associated with this pool
+    db.prepare('DELETE FROM ledger_entries WHERE pool_id = ?').run(req.params.id);
+    // Delete the pool itself
+    db.prepare('DELETE FROM pools WHERE id = ?').run(req.params.id);
+    // Record audit
+    recordAudit('ADMIN', 'DELETE_POOL', 'pools', req.params.id, `Deleted pool ${req.params.id} (Status: ${pool.status})`);
+  });
+
+  deleteTx();
+  broadcast({ type: 'POOL_DELETED', poolId: req.params.id });
+  res.json({ success: true, deleted_id: req.params.id });
 });
 
 // Create new pool (Atomic creator reservation & publish)
