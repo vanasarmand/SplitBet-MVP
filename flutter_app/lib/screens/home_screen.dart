@@ -1248,10 +1248,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Grouped Account Switcher Dropdown Button
+  // Grouped Account Switcher Dropdown Button (Right-aligned)
   Widget _buildAccountSwitcherButton() {
     return Container(
-      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      width: double.infinity,
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 20, bottom: 8),
       child: PopupMenuButton<String>(
         tooltip: 'Switch Account',
         offset: const Offset(0, 44),
