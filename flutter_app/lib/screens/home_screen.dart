@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import '../models/user.dart';
 import '../models/pool.dart';
 import '../services/api_service.dart';
-import '../services/supabase_config.dart';
-import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/wallet_card.dart';
 import '../widgets/pool_card.dart';
@@ -423,334 +421,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showServerConfigDialog() {
-    int selectedTab = ApiService.isUsingSupabase ? 0 : 1;
-    final sbUrlCtrl = TextEditingController(text: SupabaseConfig.url);
-    final sbKeyCtrl = TextEditingController(text: SupabaseConfig.anonKey);
-    final ipCtrl = TextEditingController(text: ApiService.fullHostDisplay);
-    String? testStatus; // 'testing', 'success', 'failed'
-    String testMsg = '';
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: AppTheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
-            children: [
-              Icon(Icons.cloud_sync_outlined, color: AppTheme.electricLime),
-              SizedBox(width: 10),
-              Text(
-                'Backend Settings',
-                style: TextStyle(color: AppTheme.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Mode Selector: Supabase 24/7 vs Node Server
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surfaceElevated,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => setDialogState(() {
-                            selectedTab = 0;
-                            testStatus = null;
-                          }),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              color: selectedTab == 0 ? AppTheme.electricLime.withValues(alpha: 0.2) : Colors.transparent,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: selectedTab == 0 ? AppTheme.electricLime : Colors.transparent,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.bolt, size: 16, color: selectedTab == 0 ? AppTheme.electricLime : AppTheme.textMuted),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Supabase 24/7',
-                                  style: TextStyle(
-                                    color: selectedTab == 0 ? AppTheme.textPrimary : AppTheme.textMuted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => setDialogState(() {
-                            selectedTab = 1;
-                            testStatus = null;
-                          }),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              color: selectedTab == 1 ? AppTheme.electricLime.withValues(alpha: 0.2) : Colors.transparent,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: selectedTab == 1 ? AppTheme.electricLime : Colors.transparent,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.dns_outlined, size: 16, color: selectedTab == 1 ? AppTheme.electricLime : AppTheme.textMuted),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Node.js / Tunnel',
-                                  style: TextStyle(
-                                    color: selectedTab == 1 ? AppTheme.textPrimary : AppTheme.textMuted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                if (selectedTab == 0) ...[
-                  const Text('Supabase Project URL:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: sbUrlCtrl,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'https://xyzcompany.supabase.co',
-                      hintStyle: const TextStyle(color: AppTheme.textMuted),
-                      filled: true,
-                      fillColor: AppTheme.surfaceElevated,
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text('Supabase Anon / Public Key:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: sbKeyCtrl,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      hintText: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-                      hintStyle: const TextStyle(color: AppTheme.textMuted),
-                      filled: true,
-                      fillColor: AppTheme.surfaceElevated,
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '💡 Run `server/supabase_schema.sql` in your Supabase SQL Editor once to initialize all tables and logic.',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                  ),
-                ] else ...[
-                  const Text('Node.js Server / Tunnel URL:', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: ipCtrl,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'https://xxx.trycloudflare.com or 192.168.1.134:4000',
-                      hintStyle: const TextStyle(color: AppTheme.textMuted),
-                      filled: true,
-                      fillColor: AppTheme.surfaceElevated,
-                      isDense: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '💡 Run `server/start-live.bat` on your PC to start local server & tunnel.',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                  ),
-                ],
-
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: testStatus == 'testing'
-                          ? null
-                          : () async {
-                              setDialogState(() {
-                                testStatus = 'testing';
-                                testMsg = '';
-                              });
-                              bool ok = false;
-                              if (selectedTab == 0) {
-                                ok = await widget.apiService.testConnection(
-                                  sbUrlCtrl.text.trim(),
-                                  sbKeyCtrl.text.trim(),
-                                );
-                              } else {
-                                ok = await widget.apiService.testConnection(ipCtrl.text.trim());
-                              }
-                              setDialogState(() {
-                                testStatus = ok ? 'success' : 'failed';
-                                testMsg = ok ? 'Connection successful!' : 'Could not reach server';
-                              });
-                            },
-                      icon: testStatus == 'testing'
-                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.electricLime))
-                          : Icon(
-                              testStatus == 'success'
-                                  ? Icons.check_circle
-                                  : testStatus == 'failed'
-                                      ? Icons.error_outline
-                                      : Icons.network_check,
-                              size: 16,
-                              color: testStatus == 'success'
-                                  ? AppTheme.success
-                                  : testStatus == 'failed'
-                                      ? AppTheme.error
-                                      : AppTheme.textSecondary,
-                            ),
-                      label: Text(
-                        testStatus == 'testing'
-                            ? 'Testing...'
-                            : testStatus == 'success'
-                                ? 'Online!'
-                                : testStatus == 'failed'
-                                    ? 'Unreachable'
-                                    : 'Test Connection',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: testStatus == 'success'
-                              ? AppTheme.success
-                              : testStatus == 'failed'
-                                  ? AppTheme.error
-                                  : AppTheme.textSecondary,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                          color: testStatus == 'success'
-                              ? AppTheme.success
-                              : testStatus == 'failed'
-                                  ? AppTheme.error
-                                  : AppTheme.border,
-                        ),
-                      ),
-                    ),
-                    if (testMsg.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          testMsg,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: testStatus == 'success' ? AppTheme.success : AppTheme.error,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                SupabaseConfig.resetToDefaultConfig();
-                await SupabaseService.init();
-                widget.apiService.connectWebSocket();
-                if (ctx.mounted) Navigator.pop(ctx);
-                if (mounted) {
-                  setState(() => _isLoading = true);
-                  await _initApp();
-                }
-              },
-              child: const Text('Default 24/7 Cloud', style: TextStyle(color: AppTheme.electricLime)),
-            ),
-            TextButton(
-              onPressed: () async {
-                SupabaseConfig.clearConfig();
-                ApiService.resetToDefaultHost();
-                Navigator.pop(ctx);
-                setState(() => _isLoading = true);
-                await _initApp();
-              },
-              child: const Text('Reset to Demo', style: TextStyle(color: Colors.amber)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (selectedTab == 0) {
-                  final url = sbUrlCtrl.text.trim();
-                  final key = sbKeyCtrl.text.trim();
-                  if (url.isNotEmpty && key.isNotEmpty) {
-                    SupabaseConfig.saveConfig(url, key);
-                    await SupabaseService.init();
-                    widget.apiService.connectWebSocket();
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    if (mounted) {
-                      setState(() => _isLoading = true);
-                      await _initApp();
-                    }
-                  }
-                } else {
-                  final newHost = ipCtrl.text.trim();
-                  if (newHost.isNotEmpty) {
-                    SupabaseConfig.clearConfig();
-                    ApiService.updateHost(newHost);
-                    widget.apiService.connectWebSocket();
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    if (mounted) {
-                      setState(() => _isLoading = true);
-                      await _initApp();
-                    }
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.electricLime,
-                foregroundColor: Colors.black,
-              ),
-              child: const Text('Save & Connect'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showNewUserDialog() {
     final nameCtrl = TextEditingController();
     final userCtrl = TextEditingController();
@@ -872,7 +542,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: AppTheme.electricLime,
                           ),
                           label: Text(
-                            hasValidPhoto ? 'Retake Photo' : 'Take Photo (Required)',
+                            hasValidPhoto ? 'Change Photo' : 'Select Photo (Required)',
                             style: const TextStyle(
                               color: AppTheme.electricLime,
                               fontSize: 12,
@@ -882,7 +552,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         if (!hasValidPhoto)
                           const Text(
-                            '* Camera photo required to create account',
+                            '* Profile photo required to create account',
                             style: TextStyle(
                               color: AppTheme.textMuted,
                               fontSize: 11,
@@ -1308,8 +978,8 @@ class _HomeScreenState extends State<HomeScreen> {
             // Top App Bar matching screenshot
             _buildTopHeader(),
 
-            // Demo User Quick Switcher Bar
-            _buildDemoUserSwitcher(),
+            // Grouped Account Switcher Dropdown Button
+            _buildAccountSwitcherButton(),
 
             // Offline / Demo Warning Banner
             if (!_isServerConnected)
@@ -1344,14 +1014,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     InkWell(
-                      onTap: _showServerConfigDialog,
+                      onTap: () {
+                        setState(() => _isLoading = true);
+                        _initApp();
+                      },
                       child: const Padding(
                         padding: EdgeInsets.symmetric(
                           horizontal: 6,
                           vertical: 2,
                         ),
                         child: Text(
-                          'Connect Backend',
+                          'Retry',
                           style: TextStyle(
                             color: AppTheme.electricLime,
                             fontWeight: FontWeight.bold,
@@ -1509,10 +1182,10 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Brand Logo: SplitBet with status indicator
-          Row(
+          // Brand Logo: SplitBet
+          const Row(
             children: [
-              const Text(
+              Text(
                 'Split',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
@@ -1521,61 +1194,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   letterSpacing: -0.5,
                 ),
               ),
-              const Text(
+              Text(
                 'Bet',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
                   fontSize: 26,
                   fontWeight: FontWeight.w400,
                   letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: _showServerConfigDialog,
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: (ApiService.isUsingSupabase || _isServerConnected)
-                        ? AppTheme.electricLime.withValues(alpha: 0.15)
-                        : Colors.amber.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: (ApiService.isUsingSupabase || _isServerConnected)
-                          ? AppTheme.electricLime
-                          : Colors.amber,
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.circle,
-                        size: 8,
-                        color: (ApiService.isUsingSupabase || _isServerConnected)
-                            ? AppTheme.electricLime
-                            : Colors.amber,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        ApiService.isUsingSupabase
-                            ? 'Supabase 24/7'
-                            : (_isServerConnected ? 'Live' : 'Demo'),
-                        style: TextStyle(
-                          color: (ApiService.isUsingSupabase || _isServerConnected)
-                              ? AppTheme.electricLime
-                              : Colors.amber,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
                 ),
               ),
             ],
@@ -1623,101 +1248,212 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Multi-User Quick Switcher Bar (For Seamless Multi-Account Testing & Management)
-  Widget _buildDemoUserSwitcher() {
+  // Grouped Account Switcher Dropdown Button
+  Widget _buildAccountSwitcherButton() {
     return Container(
-      height: 38,
-      margin: const EdgeInsets.only(bottom: 6),
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            alignment: Alignment.center,
-            child: const Text(
-              'Switch Account:',
-              style: TextStyle(
-                color: AppTheme.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
+      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      child: PopupMenuButton<String>(
+        tooltip: 'Switch Account',
+        offset: const Offset(0, 44),
+        color: AppTheme.surfaceElevated,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppTheme.border),
+        ),
+        onSelected: (val) {
+          if (val == '__new_user__') {
+            _showNewUserDialog();
+          } else {
+            final targetUser = _allUsers.where((u) => u.id == val).firstOrNull;
+            if (targetUser != null && targetUser.id != _currentUser.id) {
+              _switchUser(targetUser);
+            }
+          }
+        },
+        itemBuilder: (ctx) {
+          final items = <PopupMenuEntry<String>>[];
+
+          // Header
+          items.add(
+            const PopupMenuItem<String>(
+              enabled: false,
+              height: 32,
+              child: Text(
+                'SELECT ACCOUNT',
+                style: TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
               ),
             ),
-          ),
-          ..._allUsers.map((u) {
-            final isCurrent = _currentUser.id == u.id;
-            return Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Tooltip(
-                message: isCurrent
-                    ? 'Active account (Hold to delete)'
-                    : 'Tap to switch • Hold to delete',
-                child: Material(
-                  color: isCurrent ? AppTheme.electricLime : AppTheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
-                    onTap: () => _switchUser(u),
-                    onLongPress: () => _confirmDeleteUser(u),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isCurrent ? AppTheme.electricLime : AppTheme.border,
-                          width: 1,
-                        ),
-                      ),
-                      child: Row(
+          );
+          items.add(const PopupMenuDivider(height: 1));
+
+          // All User Accounts
+          for (final u in _allUsers) {
+            final isCurrent = u.id == _currentUser.id;
+            items.add(
+              PopupMenuItem<String>(
+                value: u.id,
+                height: 52,
+                child: Row(
+                  children: [
+                    UserAvatar(
+                      avatarUrl: u.avatarUrl,
+                      radius: 15,
+                      displayName: u.displayName,
+                      showBorder: isCurrent,
+                      borderColor: AppTheme.electricLime,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          UserAvatar(
-                            avatarUrl: u.avatarUrl,
-                            radius: 9,
-                            displayName: u.displayName,
-                          ),
-                          const SizedBox(width: 6),
                           Text(
-                            u.displayName.split(' ')[0],
+                            u.displayName,
                             style: TextStyle(
-                              color: isCurrent ? Colors.black : AppTheme.textSecondary,
+                              color: isCurrent ? AppTheme.electricLime : AppTheme.textPrimary,
+                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '@${u.username} • Available: R ${u.balance.available.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              color: AppTheme.textMuted,
                               fontSize: 11,
-                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
+                    if (isCurrent)
+                      const Icon(Icons.check_circle, color: AppTheme.electricLime, size: 18)
+                    else if (_allUsers.length > 1)
+                      InkWell(
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _confirmDeleteUser(u);
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(Icons.delete_outline, color: AppTheme.textMuted, size: 16),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             );
-          }),
-          ActionChip(
-            label: const Text('+ New User'),
-            backgroundColor: AppTheme.surfaceElevated,
-            labelStyle: const TextStyle(
-              color: AppTheme.electricLime,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+          }
+
+          items.add(const PopupMenuDivider(height: 1));
+
+          // + Register New User Button
+          items.add(
+            PopupMenuItem<String>(
+              value: '__new_user__',
+              height: 44,
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppTheme.electricLime.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.add, color: AppTheme.electricLime, size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Register New User',
+                    style: TextStyle(
+                      color: AppTheme.electricLime,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            onPressed: _showNewUserDialog,
+          );
+
+          return items;
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              UserAvatar(
+                avatarUrl: _currentUser.avatarUrl,
+                radius: 11,
+                displayName: _currentUser.displayName,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Switch Account',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '(${_currentUser.displayName.split(' ')[0]})',
+                style: const TextStyle(
+                  color: AppTheme.electricLime,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.keyboard_arrow_down,
+                color: AppTheme.electricLime,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  // Sub-Header: Friends +, Open Bets count, and Filter dropdown
+  // Sub-Header: Bets count on left, Friends + and Filter dropdown on right
   Widget _buildSubHeader() {
     // Aligns exactly with the text inside PoolCard (16 card margin + 20 card padding = 36)
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 36),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Friends + row on top right matching screenshot
+          // Open / Settled Bets Count
+          Text(
+            _selectedFilter == 'settled'
+                ? '${_pools.length} ${_pools.length == 1 ? "Settled Pool" : "Settled Pools"}'
+                : '$_openCount ${_openCount == 1 ? "Open Bet" : "Open Bets"}',
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+
+          // Right side: Friends + aligned left of Filter option, separated by proper button spacing
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
             children: [
               InkWell(
                 onTap: () {
@@ -1735,34 +1471,34 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 },
-                child: const Text(
-                  'Friends +',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: RichText(
+                    text: const TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Friends ',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '+',
+                          style: TextStyle(
+                            color: AppTheme.electricLime,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // 46 Open Bets & Filter v
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Open / Settled Bets Count
-              Text(
-                _selectedFilter == 'settled'
-                    ? '${_pools.length} ${_pools.length == 1 ? "Settled Pool" : "Settled Pools"}'
-                    : '$_openCount ${_openCount == 1 ? "Open Bet" : "Open Bets"}',
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              const SizedBox(width: 16),
 
               // Filter Dropdown with green chevron
               PopupMenuButton<String>(

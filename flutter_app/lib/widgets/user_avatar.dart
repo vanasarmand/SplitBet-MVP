@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'avatar_file_image.dart';
 
 class UserAvatar extends StatelessWidget {
   final String? avatarUrl;
@@ -117,17 +118,26 @@ class UserAvatar extends StatelessWidget {
       return _buildFallback();
     }
 
-    // Base64 Data URI
-    if (url.startsWith('data:image')) {
+    final size = radius * 2;
+
+    // 1. Base64 Data URI or raw base64 string
+    if (url.startsWith('data:') || _isLikelyBase64(url)) {
       try {
+        String base64String = url;
         final commaIndex = url.indexOf(',');
-        final base64String = commaIndex != -1 ? url.substring(commaIndex + 1) : url;
+        if (commaIndex != -1) {
+          base64String = url.substring(commaIndex + 1);
+        }
+        // Sanitize: remove whitespace/newlines, convert any space back to '+', and normalize padding
+        base64String = base64String.replaceAll(RegExp(r'\s+'), '').replaceAll(' ', '+');
+        base64String = base64.normalize(base64String);
         final bytes = base64Decode(base64String);
         return Image.memory(
           bytes,
           fit: BoxFit.cover,
-          width: radius * 2,
-          height: radius * 2,
+          width: size,
+          height: size,
+          gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) => _buildFallback(),
         );
       } catch (_) {
@@ -135,13 +145,24 @@ class UserAvatar extends StatelessWidget {
       }
     }
 
-    // Remote Network URL
+    // 2. Local File Path (e.g. file://..., /data/..., C:\...)
+    if (url.startsWith('file://') ||
+        url.startsWith('/') ||
+        RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(url)) {
+      final fileWidget = buildFileAvatarImage(url, size, _buildFallback());
+      if (fileWidget != null) {
+        return fileWidget;
+      }
+    }
+
+    // 3. Remote Network URL
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return Image.network(
         url,
         fit: BoxFit.cover,
-        width: radius * 2,
-        height: radius * 2,
+        width: size,
+        height: size,
+        gaplessPlayback: true,
         errorBuilder: (context, error, stackTrace) => _buildFallback(),
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
@@ -163,6 +184,14 @@ class UserAvatar extends StatelessWidget {
     }
 
     return _buildFallback();
+  }
+
+  bool _isLikelyBase64(String str) {
+    if (str.length < 40) return false;
+    if (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('file://')) {
+      return false;
+    }
+    return RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(str.substring(0, 40));
   }
 
   Widget _buildFallback() {
