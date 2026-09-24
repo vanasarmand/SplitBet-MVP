@@ -79,6 +79,29 @@ class CameraService {
     }
   }
 
+  static const List<String> presetAvatars = [
+    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150',
+    'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+  ];
+
+  static String formatErrorMessage(Object e) {
+    final s = e.toString().toLowerCase();
+    if (s.contains('missingpluginexception')) {
+      return 'Photo access is initializing or reloading. Please refresh the browser or restart the app.';
+    }
+    if (s.contains('camera_access_denied') || s.contains('permission_denied') || s.contains('permission')) {
+      return 'Camera or photo permission was denied. Please allow access in your device or browser settings.';
+    }
+    if (s.contains('no_available_camera') || s.contains('not supported')) {
+      return 'Camera is not available on this device. Please choose a photo from files or gallery.';
+    }
+    return 'Could not access photo: ${e.toString().replaceAll('Exception: ', '')}';
+  }
+
   /// Shows a modal bottom sheet allowing the user to select Camera or Gallery.
   static Future<String?> showPhotoSourceSheet(
     BuildContext context, {
@@ -160,7 +183,7 @@ class CameraService {
                       Navigator.pop(ctx);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Could not select image: $e'),
+                          content: Text(formatErrorMessage(e)),
                           backgroundColor: AppTheme.error,
                         ),
                       );
@@ -169,7 +192,7 @@ class CameraService {
                 },
               ),
             ] else ...[
-              // On Mobile: Camera & Gallery options
+              // On Mobile/Web: Camera & Gallery options
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(10),
@@ -201,7 +224,7 @@ class CameraService {
                       Navigator.pop(ctx);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Could not access camera: $e'),
+                          content: Text(formatErrorMessage(e)),
                           backgroundColor: AppTheme.error,
                         ),
                       );
@@ -241,7 +264,7 @@ class CameraService {
                       Navigator.pop(ctx);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Could not select image: $e'),
+                          content: Text(formatErrorMessage(e)),
                           backgroundColor: AppTheme.error,
                         ),
                       );
@@ -250,6 +273,47 @@ class CameraService {
                 },
               ),
             ],
+            const SizedBox(height: 16),
+            const Text(
+              'Or choose a preset avatar:',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 52,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: presetAvatars.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final avatarUrl = presetAvatars[index];
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(ctx, avatarUrl);
+                    },
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppTheme.border, width: 1.5),
+                      ),
+                      child: ClipOval(
+                        child: Image.network(
+                          avatarUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(Icons.person, color: AppTheme.textMuted),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
             const SizedBox(height: 12),
           ],
         ),
